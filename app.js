@@ -10,17 +10,45 @@
   });
 
   /* ---------- 기본 정보 ---------- */
-  var AI_ORDER = ['gemini', 'openai', 'claude'];
-  var AI_INFO = {
-    gemini: { label: 'Google Gemini', c1: '#4285F4', c2: '#1B6FE0', keyUrl: 'https://aistudio.google.com/apikey', keySite: 'Google AI Studio' },
-    openai: { label: 'OpenAI ChatGPT', c1: '#10A37F', c2: '#0B7A60', keyUrl: 'https://platform.openai.com/api-keys', keySite: 'OpenAI' },
-    claude: { label: 'Anthropic Claude', c1: '#D97757', c2: '#B0573A', keyUrl: 'https://console.anthropic.com/settings/keys', keySite: 'Anthropic' }
+  var PROVIDERS = ['gemini', 'openai', 'claude'];
+  var PROVIDER_INFO = {
+    gemini: {
+      label: 'Google Gemini',
+      keyUrl: 'https://aistudio.google.com/apikey',
+      keySite: 'Google AI Studio',
+      colors: [
+        { c1: '#4285F4', c2: '#1B6FE0' },
+        { c1: '#1C7ED6', c2: '#0B5CAB' },
+        { c1: '#7048E8', c2: '#5B3FD9' }
+      ]
+    },
+    openai: {
+      label: 'OpenAI ChatGPT',
+      keyUrl: 'https://platform.openai.com/api-keys',
+      keySite: 'OpenAI',
+      colors: [
+        { c1: '#10A37F', c2: '#0B7A60' },
+        { c1: '#0CA678', c2: '#087F5B' },
+        { c1: '#2F9E44', c2: '#237032' }
+      ]
+    },
+    claude: {
+      label: 'Anthropic Claude',
+      keyUrl: 'https://console.anthropic.com/settings/keys',
+      keySite: 'Anthropic',
+      colors: [
+        { c1: '#D97757', c2: '#B0573A' },
+        { c1: '#E8590C', c2: '#C2410C' },
+        { c1: '#F08C00', c2: '#B35C00' }
+      ]
+    }
   };
-  var DEFAULTS = {
-    gemini: { name: '제미나이', on: true, persona: '', role: '블로그 원고 담당' },
-    openai: { name: '지피티', on: false, persona: '', role: '스레드 카피·아이디어 담당' },
-    claude: { name: '클로드', on: false, persona: '', role: '최종 검수·실행 담당' }
-  };
+  /* 처음 쓰는 방에 들어갈 기본 멤버 3명 (예전 버전과 같은 이름·열쇠 자리) */
+  var MEMBER_DEFAULTS = [
+    { id: 'gemini', provider: 'gemini', name: '제미나이', on: true, persona: '', role: '블로그 원고 담당' },
+    { id: 'openai', provider: 'openai', name: '지피티', on: false, persona: '', role: '스레드 카피·아이디어 담당' },
+    { id: 'claude', provider: 'claude', name: '클로드', on: false, persona: '', role: '최종 검수·실행 담당' }
+  ];
   var ROLE_PRESETS = [
     '블로그 원고 담당',
     '스레드 카피·아이디어 담당',
@@ -31,9 +59,13 @@
     '돈벌이 아이디어 담당',
     '자료 조사 담당'
   ];
-  var USER_NAME = '제훈';
+  var USER_NAME = '대마왕';
   var KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
   var ROOM_RE = /^[A-Za-z0-9_-]{4,48}$/;
+  var ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+  var NAME_MAX = 16;
+  var ROLE_MAX = 30;
+  var PERSONA_MAX = 80;
 
   /* ---------- 요소 ---------- */
   var $ = function (s) { return document.querySelector(s); };
@@ -54,6 +86,7 @@
 
   /* ---------- 상태 ---------- */
   var settings = null;
+  var draftAis = null; /* 설정 창에서 편집 중인 AI 목록(저장 전) */
   var messages = [];
   var roomId = '';
   var roomKey = '';
@@ -70,6 +103,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  function isArr(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
   function randId(n) {
     var chars = 'abcdefghijkmnpqrstuvwxyz23456789';
     var out = '';
@@ -88,19 +122,6 @@
   }
   function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
   function read(k) { try { var r = localStorage.getItem(k); return r ? JSON.parse(r) : null; } catch (e) { return null; } }
-  function nameOf(who) {
-    if (who === 'me') return USER_NAME;
-    if (settings && settings.ais[who]) return settings.ais[who].name;
-    return 'AI';
-  }
-  function roleOf(id) {
-    return settings && settings.ais[id] ? String(settings.ais[id].role || '').trim() : '';
-  }
-  function shortRole(role) {
-    var r = String(role || '').trim();
-    if (r.slice(-2) === '담당') r = r.slice(0, -2).trim();
-    return r;
-  }
   function fmtTime(ts) {
     var d = new Date(ts || Date.now());
     var h = d.getHours();
@@ -123,6 +144,80 @@
     var s = String(v || '');
     while (s.slice(-1) === '/') s = s.slice(0, -1);
     return s;
+  }
+
+  /* ---------- AI 멤버(동적 목록) 다루기 ---------- */
+  function memberList() { return (settings && isArr(settings.ais)) ? settings.ais : []; }
+  function enabledAis() { return memberList().filter(function (a) { return a.on; }); }
+  function aiById(id) {
+    var list = memberList();
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  function providerInfo(p) { return PROVIDER_INFO[p] || PROVIDER_INFO.gemini; }
+  function colorsOf(ai) {
+    if (!ai) return { c1: '#8a95a1', c2: '#6b7684' };
+    var set = providerInfo(ai.provider).colors;
+    var i = parseInt(ai.colorIndex, 10);
+    if (!isFinite(i) || i < 0) i = 0;
+    return set[i % set.length];
+  }
+  function defaultNameFor(provider) {
+    for (var i = 0; i < MEMBER_DEFAULTS.length; i++) {
+      if (MEMBER_DEFAULTS[i].provider === provider) return MEMBER_DEFAULTS[i].name;
+    }
+    return 'AI';
+  }
+  function nameOf(who) {
+    if (who === 'me') return USER_NAME;
+    var ai = aiById(who);
+    if (ai) return ai.name;
+    if (settings && settings.names && typeof settings.names === 'object' && settings.names[who]) return String(settings.names[who]);
+    return 'AI';
+  }
+  function roleOf(id) {
+    var ai = aiById(id);
+    return ai ? String(ai.role || '').trim() : '';
+  }
+  function shortRole(role) {
+    var r = String(role || '').trim();
+    if (r.slice(-2) === '담당') r = r.slice(0, -2).trim();
+    return r;
+  }
+  function isAiMessage(who) { return who && who !== 'me' && who !== 'system'; }
+  function nextColorIndex(provider, list) {
+    var used = {};
+    (list || []).forEach(function (a) {
+      if (a.provider !== provider) return;
+      var i = parseInt(a.colorIndex, 10);
+      if (isFinite(i) && i >= 0) used[i % 3] = true;
+    });
+    for (var i = 0; i < 3; i++) if (!used[i]) return i;
+    return (list || []).filter(function (a) { return a.provider === provider; }).length % 3;
+  }
+  function newMemberId(provider, list) {
+    var id = '';
+    var guard = 0;
+    var exists = function (x) {
+      return (list || []).some(function (a) { return a.id === x; });
+    };
+    do {
+      id = provider + '_' + randId(5);
+      guard++;
+    } while (exists(id) && guard < 50);
+    return id;
+  }
+  function cloneAi(a) {
+    return {
+      id: a.id,
+      provider: a.provider,
+      name: a.name,
+      role: a.role || '',
+      on: !!a.on,
+      apiKey: a.apiKey || '',
+      persona: a.persona || '',
+      colorIndex: typeof a.colorIndex === 'number' ? a.colorIndex : 0
+    };
   }
 
   /* ---------- 잠금 / 열쇠 ---------- */
@@ -207,34 +302,109 @@
   function messagesKey() { return ns + '.messages'; }
   function dbPath() { return 'rooms/' + encodeURIComponent(roomId + '_' + roomKey) + '/messages.json'; }
 
+  /* 예전 버전(고정 3명) 저장값을 새 목록 형식으로 바꿔요 */
+  function migrateAis(raw) {
+    var out = [];
+    function push(provider, id, a, fallbackRole, fallbackOn) {
+      a = (a && typeof a === 'object') ? a : {};
+      var p = PROVIDERS.indexOf(provider) > -1 ? provider : 'gemini';
+      var safeId = (typeof id === 'string' && ID_RE.test(id)) ? id : newMemberId(p, out);
+      if (out.some(function (x) { return x.id === safeId; })) safeId = newMemberId(p, out);
+      var nm = String(a.name || '').trim() || defaultNameFor(p);
+      var ci = parseInt(a.colorIndex, 10);
+      out.push({
+        id: safeId,
+        provider: p,
+        name: nm.slice(0, NAME_MAX),
+        role: typeof a.role === 'string' ? a.role.slice(0, ROLE_MAX) : (fallbackRole || ''),
+        on: typeof a.on === 'boolean' ? a.on : !!fallbackOn,
+        apiKey: String(a.apiKey || a.key || ''),
+        persona: String(a.persona || '').slice(0, PERSONA_MAX),
+        colorIndex: (isFinite(ci) && ci >= 0) ? ci : nextColorIndex(p, out)
+      });
+    }
+
+    if (isArr(raw)) {
+      /* 이미 새 형식: 그대로 살리되 값은 꼼꼼히 점검 */
+      raw.forEach(function (a) {
+        if (!a || typeof a !== 'object') return;
+        var p = PROVIDERS.indexOf(a.provider) > -1 ? a.provider : 'gemini';
+        push(p, a.id, a, '', true);
+      });
+    } else if (raw && typeof raw === 'object') {
+      /* 예전 형식: { gemini:{...}, openai:{...}, claude:{...} } */
+      MEMBER_DEFAULTS.forEach(function (d) {
+        push(d.provider, d.id, raw[d.id], d.role, d.on);
+      });
+    }
+
+    if (!out.length) {
+      MEMBER_DEFAULTS.forEach(function (d) {
+        out.push({
+          id: d.id, provider: d.provider, name: d.name, role: d.role,
+          on: d.on, apiKey: '', persona: d.persona, colorIndex: nextColorIndex(d.provider, out)
+        });
+      });
+    }
+    return out;
+  }
+
   function loadSettings() {
     var saved = read(settingsKey()) || {};
     var s = {
       roomName: saved.roomName || '우리들 단톡방',
       dbUrl: saved.dbUrl || '',
       clearedAt: saved.clearedAt || 0,
-      ais: {}
+      ais: migrateAis(saved.ais),
+      names: (saved.names && typeof saved.names === 'object') ? saved.names : {}
     };
-    AI_ORDER.forEach(function (id) {
-      var a = (saved.ais && saved.ais[id]) || {};
-      s.ais[id] = {
-        name: a.name || DEFAULTS[id].name,
-        key: a.key || '',
-        persona: a.persona || '',
-        role: typeof a.role === 'string' ? a.role : DEFAULTS[id].role,
-        on: typeof a.on === 'boolean' ? a.on : DEFAULTS[id].on
-      };
-    });
+    s.ais.forEach(function (a) { s.names[a.id] = a.name; });
     return s;
   }
   function saveSettings() { store(settingsKey(), settings); }
 
   function loadMessages() {
     var list = read(messagesKey());
-    return Array.isArray(list) ? list : [];
+    return isArr(list) ? list : [];
   }
   function saveMessages() {
     store(messagesKey(), messages.filter(function (m) { return !m.err; }));
+  }
+
+  /* ---------- @이름 찾기 (이름에 공백이 있어도 정확히) ---------- */
+  function scanMentions(text) {
+    var src = String(text || '');
+    var lower = src.toLowerCase();
+    var names = memberList().map(function (a) {
+      return { id: a.id, name: a.name, lower: String(a.name).toLowerCase() };
+    }).filter(function (n) { return !!n.name; });
+    /* 긴 이름부터 확인해서 '유튜브1호'가 '유튜브'보다 먼저 잡히게 해요 */
+    names.sort(function (a, b) { return b.name.length - a.name.length; });
+
+    var ids = [];
+    var ranges = [];
+    var i = 0;
+    while (i < src.length) {
+      if (src.charAt(i) === '@') {
+        var hit = null;
+        for (var k = 0; k < names.length; k++) {
+          var n = names[k];
+          if (lower.substr(i + 1, n.name.length) === n.lower) { hit = n; break; }
+        }
+        if (hit) {
+          if (ids.indexOf(hit.id) < 0) ids.push(hit.id);
+          ranges.push([i, i + 1 + hit.name.length]);
+          i = i + 1 + hit.name.length;
+          continue;
+        }
+      }
+      i++;
+    }
+    return { ids: ids, ranges: ranges };
+  }
+  function hasAllMention(text) {
+    var t = String(text || '');
+    return t.indexOf('@전체') > -1 || t.indexOf('@모두') > -1 || t.indexOf('@다들') > -1;
   }
 
   /* ---------- 화면 ---------- */
@@ -247,15 +417,15 @@
   }
 
   function renderBadges() {
-    var on = AI_ORDER.filter(function (id) { return settings.ais[id].on; });
+    var on = enabledAis();
     var html = '<span class="badge badge-lock">🔒 비밀 방</span>';
     if (!on.length) {
       html += '<span class="badge badge-off">AI 모두 꺼짐</span>';
     } else {
-      html += on.map(function (id) {
-        var info = AI_INFO[id];
-        var role = roleOf(id);
-        return '<span class="badge" style="--c1:' + info.c1 + ';--c2:' + info.c2 + '" title="' + esc(role || '역할 없음') + '"><i></i>' + esc(settings.ais[id].name) +
+      html += on.map(function (a) {
+        var col = colorsOf(a);
+        var role = String(a.role || '').trim();
+        return '<span class="badge" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '" title="' + esc(a.name + (role ? ' · ' + role : '')) + '"><i></i>' + esc(a.name) +
           (role ? '<em>· ' + esc(shortRole(role)) + '</em>' : '') + '</span>';
       }).join('');
     }
@@ -263,10 +433,10 @@
   }
 
   function renderChips() {
-    var on = AI_ORDER.filter(function (id) { return settings.ais[id].on; });
+    var on = enabledAis();
     var html = '<button class="chip chip-all" type="button" data-mention="__all">전체 (각자 역할대로)</button>';
-    html += on.map(function (id) {
-      return '<button class="chip" type="button" data-mention="' + esc(settings.ais[id].name) + '" style="--c1:' + AI_INFO[id].c1 + '">@' + esc(settings.ais[id].name) + '</button>';
+    html += on.map(function (a) {
+      return '<button class="chip" type="button" data-mention="' + esc(a.name) + '" style="--c1:' + colorsOf(a).c1 + '">@' + esc(a.name) + '</button>';
     }).join('');
     chipsEl.innerHTML = html;
   }
@@ -278,6 +448,7 @@
       '<ol>' +
       '<li>오른쪽 위 <b>⚙️</b>를 눌러 AI 열쇠(API 키)를 넣어 주세요.</li>' +
       '<li>AI마다 <b>담당 역할</b>을 정해 두면, <b>전체</b>에게 말할 때 각자 맡은 일만 해요.</li>' +
+      '<li>같은 AI라도 이름만 다르게 여러 명 넣을 수 있어요. (예: 제미나이1호, 제미나이2호)</li>' +
       '<li>아래에 하고 싶은 말을 쓰고 <b>전송</b>을 누르면 AI들이 차례로 답해요.</li>' +
       '<li><b>🔗</b>를 누르면 이 방의 비밀 링크가 복사돼요. 나만 쓰려면 아무한테도 보내지 않으면 돼요.</li>' +
       '</ol>' +
@@ -312,23 +483,26 @@
     return '<div class="sys">' + esc(m.text) + '</div>';
   }
   function aiHTML(m) {
-    var info = AI_INFO[m.who] || { c1: '#888888', c2: '#666666' };
+    var ai = aiById(m.who);
+    var col = colorsOf(ai);
     var name = nameOf(m.who);
-    return '<div class="msg ai" style="--c1:' + info.c1 + ';--c2:' + info.c2 + '">' +
+    var role = roleOf(m.who);
+    return '<div class="msg ai" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
       '<div class="avatar">' + esc(String(name).charAt(0) || 'A') + '</div>' +
       '<div class="msg-body">' +
-      '<div class="who">' + esc(name) + (roleOf(m.who) ? '<em>· ' + esc(roleOf(m.who)) + '</em>' : '') + '</div>' +
+      '<div class="who">' + esc(name) + (role ? '<em>· ' + esc(role) + '</em>' : '') + '</div>' +
       '<div class="row"><div class="bubble' + (m.err ? ' bubble-err' : '') + '">' + esc(m.text) + '</div>' +
       '<div class="stamp">' + fmtTime(m.ts) + '</div></div>' +
       '</div></div>';
   }
   function typingHTML(id) {
-    var info = AI_INFO[id] || { c1: '#888888', c2: '#666666' };
+    var col = colorsOf(aiById(id));
     var name = nameOf(id);
-    return '<div class="msg ai" style="--c1:' + info.c1 + ';--c2:' + info.c2 + '">' +
+    var role = roleOf(id);
+    return '<div class="msg ai" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
       '<div class="avatar">' + esc(String(name).charAt(0) || 'A') + '</div>' +
       '<div class="msg-body">' +
-      '<div class="who">' + esc(name) + (roleOf(id) ? '<em>· ' + esc(roleOf(id)) + '</em>' : '') + '</div>' +
+      '<div class="who">' + esc(name) + (role ? '<em>· ' + esc(role) + '</em>' : '') + '</div>' +
       '<div class="row"><div class="bubble typing"><span>생각 중</span><i></i><i></i><i></i></div></div>' +
       '</div></div>';
   }
@@ -359,9 +533,10 @@
     pushMessage({ who: 'me', text: text });
     var ids = pickTargets(text);
     if (!ids.length) {
-      var offNamed = namedIds(text).filter(function (id) { return !settings.ais[id].on; });
+      var named = scanMentions(text).ids.map(aiById).filter(Boolean);
+      var offNamed = named.filter(function (a) { return !a.on; });
       var msg = offNamed.length
-        ? '불러준 ' + offNamed.map(function (id) { return settings.ais[id].name; }).join(', ') + '가 지금 꺼져 있어요. ⚙️에서 켜 주세요!'
+        ? '불러준 ' + offNamed.map(function (a) { return a.name; }).join(', ') + '가 지금 꺼져 있어요. ⚙️에서 켜 주세요!'
         : '지금은 AI 친구가 모두 꺼져 있어요. 오른쪽 위 ⚙️에서 켜 주세요!';
       pushMessage({ who: 'system', text: msg });
       render();
@@ -382,20 +557,16 @@
     next();
   }
 
-  function namedIds(text) {
-    return AI_ORDER.filter(function (id) {
-      var nm = settings.ais[id].name;
-      return nm && text.indexOf('@' + nm) > -1;
-    });
-  }
-
   /* 본문에 @이름 을 직접 썼거나 칩으로 넣었을 때 → 그 AI만 부름 */
   function pickTargets(text) {
-    var on = AI_ORDER.filter(function (id) { return settings.ais[id].on; });
-    if (text.indexOf('@전체') > -1 || text.indexOf('@모두') > -1 || text.indexOf('@다들') > -1) return on;
-    var named = namedIds(text);
+    var on = enabledAis().map(function (a) { return a.id; });
+    if (hasAllMention(text)) return on;
+    var named = scanMentions(text).ids;
     if (named.length) {
-      return named.filter(function (id) { return settings.ais[id].on; });
+      return named.filter(function (id) {
+        var a = aiById(id);
+        return a && a.on;
+      });
     }
     return on;
   }
@@ -425,6 +596,7 @@
     var name = nameOf(id);
     var code = err && err.code;
     if (code === 'NO_KEY') return name + ' 열쇠(API 키)가 아직 없어요. ⚙️ 설정에서 넣어 주면 ' + (roleOf(id) || '단톡방 친구') + ' 일을 맡을게요!';
+    if (code === 'GONE') return name + '가 설정에서 빠졌어요. ⚙️에서 다시 확인해 주세요.';
     if (code === 'NETWORK') return name + '랑 연결이 안 됐어요. 인터넷이 되는지 한 번 확인해 주세요!';
     if (code === 'EMPTY') return name + '가 오늘은 말이 없네요ㅎㅎ 한 번 더 말 걸어 봐 주세요.';
     var st = err && err.status;
@@ -443,29 +615,33 @@
 
   /* ---------- AI에게 묻기 ---------- */
   function systemPrompt(id) {
-    var ai = settings.ais[id];
-    var persona = (ai.persona || '').trim();
-    var mine = roleOf(id) || '정해진 역할 없이 단톡방 친구처럼 돕기';
+    var me = aiById(id) || { name: 'AI', persona: '', role: '' };
+    var mine = String(me.role || '').trim() || '정해진 역할 없이 단톡방 친구처럼 돕기';
+    var persona = String(me.persona || '').trim();
     var lines = [];
-    lines.push('당신은 ' + ai.name + '입니다. 이 단톡방에서 당신의 담당 역할은 [' + mine + ']입니다.');
+    lines.push('당신은 ' + me.name + '입니다. 이 단톡방에서 당신의 담당 역할은 [' + mine + ']입니다.');
     if (persona) lines.push('말투와 성격: ' + persona);
     lines.push('');
     lines.push('이 방의 멤버와 역할:');
     lines.push('- ' + USER_NAME + ' (지시하는 사람, 사장님)');
-    lines.push('- ' + ai.name + ' (당신): ' + mine);
-    AI_ORDER.forEach(function (other) {
-      if (other === id) return;
-      if (!settings.ais[other].on) return;
-      lines.push('- ' + settings.ais[other].name + ': ' + (roleOf(other) || '정해진 역할 없음'));
+    lines.push('- ' + me.name + ' (당신): ' + mine);
+    enabledAis().forEach(function (other) {
+      if (other.id === id) return;
+      lines.push('- ' + other.name + ': ' + (String(other.role || '').trim() || '정해진 역할 없음'));
     });
     lines.push('');
     lines.push('지켜야 할 것:');
     lines.push('1. 답할 때는 자기 담당 역할의 일을 실제 결과물로 내놓으세요. (원고면 원고, 검수면 고칠 점과 고친 결과)');
-    lines.push('2. 다른 AI의 담당 영역은 대신 하지 말고, 필요하면 그 AI에게 넘기세요. 예: "이건 클로드가 검수하면 좋겠어요."');
+    lines.push('2. 다른 AI의 담당 영역은 대신 하지 말고, 필요하면 그 AI에게 넘기세요. 예: "이건 ' + firstOtherName(id) + '가 하면 좋겠어요."');
     lines.push('3. 앞에 다른 AI가 이미 답했다면 그 내용을 이어받아, 겹치는 말은 빼고 내 역할에서 보탤 것만 말하세요.');
     lines.push('4. 카카오톡 단톡방처럼 짧고 편한 반말로, 보통 2~6문장. 길게 설명하지 마세요.');
     lines.push('5. 모르면 모른다고 말하고, 없는 내용을 지어내지 마세요.');
     return lines.join(String.fromCharCode(10));
+  }
+
+  function firstOtherName(id) {
+    var others = enabledAis().filter(function (a) { return a.id !== id; });
+    return others.length ? others[0].name : '다른 AI';
   }
 
   function buildHistory(selfId) {
@@ -475,7 +651,7 @@
       var role, text;
       if (m.who === 'me') { role = 'user'; text = m.text; }
       else if (m.who === selfId) { role = 'assistant'; text = m.text; }
-      else if (AI_INFO[m.who]) { role = 'user'; text = '[' + nameOf(m.who) + '] ' + m.text; }
+      else if (isAiMessage(m.who)) { role = 'user'; text = '[' + nameOf(m.who) + '] ' + m.text; }
       else return;
       var last = out[out.length - 1];
       if (last && last.role === role) last.text += String.fromCharCode(10) + text;
@@ -506,12 +682,14 @@
   }
 
   function askAI(id) {
-    var ai = settings.ais[id];
-    var key = (ai.key || '').trim();
+    var ai = aiById(id);
+    if (!ai) return Promise.reject({ code: 'GONE' });
+    var provider = ai.provider;
+    var key = String(ai.apiKey || '').trim();
     if (!key) return Promise.reject({ code: 'NO_KEY' });
     var hist = buildHistory(id);
 
-    if (id === 'gemini') {
+    if (provider === 'gemini') {
       var gBody = {
         systemInstruction: { parts: [{ text: systemPrompt(id) }] },
         contents: toGemini(hist),
@@ -530,7 +708,7 @@
       });
     }
 
-    if (id === 'openai') {
+    if (provider === 'openai') {
       var oBody = {
         model: 'gpt-4o-mini',
         messages: [{ role: 'system', content: systemPrompt(id) }].concat(hist.map(function (h) {
@@ -692,36 +870,42 @@
   function openSettings() {
     $('#setRoomName').value = settings.roomName;
     $('#setDbUrl').value = settings.dbUrl;
+    draftAis = memberList().map(cloneAi);
     renderAiCards();
-    renderRoleSummary(readCards());
+    renderRoleSummary();
     renderDbStatus();
+    var panel = $('#addAiPanel');
+    if (panel) panel.hidden = true;
     modal.hidden = false;
     document.body.classList.add('modal-open');
   }
   function closeSettings() {
     modal.hidden = true;
     document.body.classList.remove('modal-open');
+    draftAis = null;
   }
 
   function renderAiCards() {
-    aiCardsEl.innerHTML = AI_ORDER.map(function (id) {
-      var a = settings.ais[id];
-      var info = AI_INFO[id];
-      return '<div class="ai-card' + (a.on ? ' on' : '') + '" data-ai="' + id + '" style="--c1:' + info.c1 + ';--c2:' + info.c2 + '">' +
+    if (!draftAis) return;
+    aiCardsEl.innerHTML = draftAis.map(function (a) {
+      var info = providerInfo(a.provider);
+      var col = colorsOf(a);
+      return '<div class="ai-card' + (a.on ? ' on' : '') + '" data-ai="' + esc(a.id) + '" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
         '<div class="ai-card-head">' +
         '<div class="avatar">' + esc(String(a.name).charAt(0) || 'A') + '</div>' +
         '<div class="ai-card-title">' +
-        '<input class="ai-name" data-f="name" value="' + esc(a.name) + '" maxlength="10" aria-label="AI 이름">' +
+        '<input class="ai-name" data-f="name" value="' + esc(a.name) + '" maxlength="' + NAME_MAX + '" aria-label="AI 이름">' +
         '<div class="ai-kind">' + esc(info.label) + '</div>' +
         '</div>' +
         '<label class="switch" title="켜기 / 끄기">' +
         '<input type="checkbox" data-f="on"' + (a.on ? ' checked' : '') + ' aria-label="' + esc(a.name) + ' 켜기">' +
         '<span class="slider"></span>' +
         '</label>' +
+        '<button type="button" class="ai-del" data-del="' + esc(a.id) + '" title="이 AI 지우기" aria-label="' + esc(a.name) + ' 지우기">✕</button>' +
         '</div>' +
         '<label class="field">' +
         '<span class="field-label">담당 역할</span>' +
-        '<input class="ai-role" data-f="role" value="' + esc(a.role) + '" maxlength="30" placeholder="예: 블로그 원고 담당">' +
+        '<input class="ai-role" data-f="role" value="' + esc(a.role) + '" maxlength="' + ROLE_MAX + '" placeholder="예: 블로그 원고 담당">' +
         '</label>' +
         '<div class="role-chips">' + ROLE_PRESETS.map(function (r) {
           return '<button type="button" class="role-chip' + (a.role === r ? ' active' : '') + '" data-role="' + esc(r) + '">' + esc(shortRole(r)) + '</button>';
@@ -729,70 +913,182 @@
         '<div class="field">' +
         '<span class="field-label">AI 열쇠 (API 키)</span>' +
         '<div class="key-row">' +
-        '<input class="ai-key" data-f="key" type="password" aria-label="' + esc(a.name) + ' API 키" value="' + esc(a.key) + '" placeholder="열쇠를 붙여 넣으세요" autocomplete="off" spellcheck="false">' +
+        '<input class="ai-key" data-f="key" type="password" aria-label="' + esc(a.name) + ' API 키" value="' + esc(a.apiKey) + '" placeholder="열쇠를 붙여 넣으세요" autocomplete="off" spellcheck="false">' +
         '<button type="button" class="ghost-btn sm" data-reveal>보기</button>' +
         '</div>' +
         '</div>' +
         '<label class="field">' +
         '<span class="field-label">성격 한 줄 (선택)</span>' +
-        '<input class="ai-persona" data-f="persona" value="' + esc(a.persona) + '" maxlength="80" placeholder="예: 다정한 요리 선생님">' +
+        '<input class="ai-persona" data-f="persona" value="' + esc(a.persona) + '" maxlength="' + PERSONA_MAX + '" placeholder="예: 다정한 요리 선생님">' +
         '</label>' +
         '<div class="ai-foot">열쇠 받는 곳: <a href="' + info.keyUrl + '" target="_blank" rel="noopener">' + esc(info.keySite) + '</a></div>' +
         '</div>';
     }).join('');
   }
 
+  /* 화면에 적힌 값을 편집 중인 목록(draftAis)으로 읽어 와요 */
   function readCards() {
-    var out = {};
-    AI_ORDER.forEach(function (id) {
-      var card = aiCardsEl.querySelector('.ai-card[data-ai="' + id + '"]');
+    if (!draftAis) return;
+    draftAis.forEach(function (a) {
+      var card = aiCardsEl.querySelector('.ai-card[data-ai="' + a.id + '"]');
       if (!card) return;
-      out[id] = {
-        name: (card.querySelector('[data-f="name"]').value.trim() || DEFAULTS[id].name).slice(0, 10),
-        role: card.querySelector('[data-f="role"]').value.trim(),
-        on: card.querySelector('[data-f="on"]').checked
-      };
+      var nm = card.querySelector('[data-f="name"]').value.trim();
+      a.name = (nm || defaultNameFor(a.provider)).slice(0, NAME_MAX);
+      a.role = card.querySelector('[data-f="role"]').value.trim().slice(0, ROLE_MAX);
+      a.on = card.querySelector('[data-f="on"]').checked;
+      a.apiKey = card.querySelector('[data-f="key"]').value.trim();
+      a.persona = card.querySelector('[data-f="persona"]').value.trim().slice(0, PERSONA_MAX);
     });
-    return out;
   }
 
-  function renderRoleSummary(ais) {
+  function renderRoleSummary() {
     var el = $('#roleSummary');
-    if (!el) return;
-    ais = ais || readCards();
+    if (!el || !draftAis) return;
     var rows = ['<div class="role-row me"><span class="dot" style="--c1:#191919;--c2:#191919"></span><b>' + esc(USER_NAME) + '</b><span class="role-text">시키는 사람 (사장님)</span></div>'];
-    AI_ORDER.forEach(function (id) {
-      var a = ais[id];
-      if (!a) return;
-      var info = AI_INFO[id];
-      rows.push('<div class="role-row' + (a.on ? '' : ' off') + '" style="--c1:' + info.c1 + ';--c2:' + info.c2 + '">' +
+    draftAis.forEach(function (a) {
+      var col = colorsOf(a);
+      rows.push('<div class="role-row' + (a.on ? '' : ' off') + '" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
         '<span class="dot"></span><b>' + esc(a.name) + '</b>' +
         '<span class="role-text">' + esc(a.role || '역할이 아직 없어요') + '</span>' +
         (a.on ? '' : '<span class="role-off">꺼짐</span>') +
         '</div>');
     });
-    var onCount = AI_ORDER.filter(function (id) { return ais[id] && ais[id].on; }).length;
+    var onCount = draftAis.filter(function (a) { return a.on; }).length;
     el.innerHTML = rows.join('') +
       '<p class="role-note">' + (onCount > 1
         ? '‘전체 (각자 역할대로)’에게 말하면 위에서부터 한 명씩, 앞사람 답변을 보고 자기 역할만 해요.'
         : 'AI를 두 명 이상 켜면 역할을 나눠서 이어서 일해요.') + '</p>';
   }
 
-  function saveSettingsFromModal() {
-    settings.roomName = ($('#setRoomName').value.trim() || '우리들 단톡방').slice(0, 24);
-    AI_ORDER.forEach(function (id) {
-      var card = aiCardsEl.querySelector('.ai-card[data-ai="' + id + '"]');
-      if (!card) return;
-      var a = settings.ais[id];
-      var nm = card.querySelector('[data-f="name"]').value.trim();
-      a.name = (nm || DEFAULTS[id].name).slice(0, 10);
-      a.key = card.querySelector('[data-f="key"]').value.trim();
-      a.persona = card.querySelector('[data-f="persona"]').value.trim();
-      a.role = card.querySelector('[data-f="role"]').value.trim().slice(0, 30);
-      a.on = card.querySelector('[data-f="on"]').checked;
+  /* 설정 창 안에서 값을 고치는 대로 ‘역할 한눈에 보기’도 같이 맞춰요 */
+  function syncSummary() {
+    readCards();
+    renderRoleSummary();
+  }
+
+  /* ---------- AI 추가 / 삭제 (설정 창 안에서) ---------- */
+  function openAddPanel() {
+    if (!draftAis) return;
+    readCards();
+    var sel = $('#newAiProvider');
+    var provider = (sel && sel.value) || 'gemini';
+    var nameInput = $('#newAiName');
+    nameInput.value = '';
+    $('#newAiRole').value = '';
+    nameInput.placeholder = '예: ' + defaultNameFor(provider) + '2, 유튜브1호';
+    $('#addAiPanel').hidden = false;
+    try { nameInput.focus(); } catch (e) { }
+  }
+
+  function closeAddPanel() {
+    var panel = $('#addAiPanel');
+    if (panel) panel.hidden = true;
+  }
+
+  function addAiMember() {
+    if (!draftAis) return;
+    readCards();
+    var sel = $('#newAiProvider');
+    var provider = (sel && sel.value) || 'gemini';
+    if (PROVIDERS.indexOf(provider) < 0) provider = 'gemini';
+    var name = $('#newAiName').value.trim();
+    var role = $('#newAiRole').value.trim();
+    if (!name) {
+      var sameProvider = draftAis.filter(function (a) { return a.provider === provider; }).length;
+      name = defaultNameFor(provider) + (sameProvider + 1);
+    }
+    name = uniqueName(name, draftAis, '');
+    var apiKey = '';
+    for (var i = 0; i < draftAis.length; i++) {
+      if (draftAis[i].provider === provider && draftAis[i].apiKey) { apiKey = draftAis[i].apiKey; break; }
+    }
+    var ai = {
+      id: newMemberId(provider, draftAis),
+      provider: provider,
+      name: name.slice(0, NAME_MAX),
+      role: role.slice(0, ROLE_MAX),
+      on: true,
+      apiKey: apiKey,
+      persona: '',
+      colorIndex: nextColorIndex(provider, draftAis)
+    };
+    draftAis.push(ai);
+    renderAiCards();
+    renderRoleSummary();
+    closeAddPanel();
+    toast(ai.name + '를 추가했어요. 아래 ‘저장’을 눌러야 반영돼요!');
+    var card = aiCardsEl.querySelector('.ai-card[data-ai="' + ai.id + '"]');
+    if (card && card.scrollIntoView) {
+      try { card.scrollIntoView({ block: 'center' }); } catch (e) { }
+    }
+  }
+
+  function removeAiMember(id) {
+    if (!draftAis) return;
+    readCards();
+    if (draftAis.length <= 1) { toast('AI는 최소 한 명은 남겨 둬야 해요.'); return; }
+    var gone = null;
+    draftAis = draftAis.filter(function (a) {
+      if (a.id === id) { gone = a; return false; }
+      return true;
     });
+    renderAiCards();
+    renderRoleSummary();
+    if (gone) toast(gone.name + '를 목록에서 뺐어요. ‘저장’을 누르면 반영돼요.');
+  }
+
+  function uniqueName(name, list, exceptId) {
+    var base = String(name || '').trim() || 'AI';
+    var used = {};
+    (list || []).forEach(function (a) {
+      if (exceptId && a.id === exceptId) return;
+      used[String(a.name).toLowerCase()] = true;
+    });
+    var out = base.slice(0, NAME_MAX);
+    var n = 2;
+    while (used[out.toLowerCase()]) {
+      out = (base.slice(0, NAME_MAX - 3) + ' ' + n).slice(0, NAME_MAX);
+      n++;
+    }
+    return out;
+  }
+
+  function saveSettingsFromModal() {
+    if (!draftAis) draftAis = memberList().map(cloneAi);
+    readCards();
     var db = stripSlash($('#setDbUrl').value.trim());
     if (db && !isHttpUrl(db)) { toast('공용 공책 주소는 https://로 시작해야 해요'); return; }
+
+    var used = {};
+    var renamed = 0;
+    var next = draftAis.map(function (a) {
+      var nm = String(a.name || '').trim() || defaultNameFor(a.provider);
+      var base = nm.slice(0, NAME_MAX);
+      var out = base;
+      var n = 2;
+      while (used[out.toLowerCase()]) {
+        out = (base.slice(0, NAME_MAX - 3) + ' ' + n).slice(0, NAME_MAX);
+        n++;
+      }
+      if (out !== a.name) renamed++;
+      used[out.toLowerCase()] = true;
+      return {
+        id: a.id,
+        provider: PROVIDERS.indexOf(a.provider) > -1 ? a.provider : 'gemini',
+        name: out,
+        role: String(a.role || '').slice(0, ROLE_MAX),
+        on: !!a.on,
+        apiKey: String(a.apiKey || ''),
+        persona: String(a.persona || '').slice(0, PERSONA_MAX),
+        colorIndex: typeof a.colorIndex === 'number' ? a.colorIndex : 0
+      };
+    });
+
+    settings.roomName = ($('#setRoomName').value.trim() || '우리들 단톡방').slice(0, 24);
+    settings.ais = next;
+    var names = (settings.names && typeof settings.names === 'object') ? settings.names : {};
+    next.forEach(function (a) { names[a.id] = a.name; });
+    settings.names = names;
     settings.dbUrl = db;
     saveSettings();
     updateHash();
@@ -801,7 +1097,7 @@
     closeSettings();
     render();
     restartSync();
-    toast('저장했어요!');
+    toast(renamed ? '저장했어요! 이름이 겹친 AI는 뒤에 번호를 붙였어요.' : '저장했어요!');
   }
 
   /* ---------- 입력창 ---------- */
@@ -810,13 +1106,25 @@
     inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
   }
   function insertMention(name) {
-    var start = inputEl.selectionStart || 0;
-    var end = inputEl.selectionEnd || 0;
+    var focused = document.activeElement === inputEl;
+    var start = focused ? (inputEl.selectionStart || 0) : inputEl.value.length;
+    var end = focused ? (inputEl.selectionEnd || 0) : inputEl.value.length;
     var val = inputEl.value;
     var token = '@' + name + ' ';
     inputEl.value = val.slice(0, start) + token + val.slice(end);
     var pos = start + token.length;
     inputEl.setSelectionRange(pos, pos);
+    inputEl.focus();
+    autoGrow();
+  }
+  /* ‘전체’ 칩: 본문에 박힌 @이름(공백 포함)을 통째로 지워요 */
+  function clearMentions() {
+    var text = inputEl.value;
+    var ranges = scanMentions(text).ranges.slice().sort(function (a, b) { return b[0] - a[0]; });
+    ranges.forEach(function (r) { text = text.slice(0, r[0]) + text.slice(r[1]); });
+    text = text.replace(/@(전체|모두|다들)/g, ' ');
+    text = text.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
+    inputEl.value = text;
     inputEl.focus();
     autoGrow();
   }
@@ -856,16 +1164,8 @@
       var chip = e.target.closest('.chip');
       if (!chip) return;
       var m = chip.getAttribute('data-mention');
-      if (m === '__all') {
-        var raw = inputEl.value.split(String.fromCharCode(10)).join(' ');
-        var keep = [];
-        raw.split(' ').forEach(function (tok) { if (tok && tok.charAt(0) !== '@') keep.push(tok); });
-        inputEl.value = keep.join(' ');
-        inputEl.focus();
-        autoGrow();
-      } else {
-        insertMention(m);
-      }
+      if (m === '__all') clearMentions();
+      else insertMention(m);
     });
 
     chatEl.addEventListener('click', function (e) {
@@ -879,34 +1179,72 @@
       if (e.key === 'Escape' && !modal.hidden) closeSettings();
     });
 
+    /* AI 카드: 열쇠 보기 · 켜기/끄기 · 역할 칩 · 삭제 */
     aiCardsEl.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-del]');
+      if (del) {
+        e.preventDefault();
+        removeAiMember(del.getAttribute('data-del'));
+        return;
+      }
       var btn = e.target.closest('[data-reveal]');
-      if (!btn) return;
-      var field = btn.closest('.key-row').querySelector('.ai-key');
-      var show = field.type === 'password';
-      field.type = show ? 'text' : 'password';
-      btn.textContent = show ? '숨기기' : '보기';
+      if (btn) {
+        var field = btn.closest('.key-row').querySelector('.ai-key');
+        var show = field.type === 'password';
+        field.type = show ? 'text' : 'password';
+        btn.textContent = show ? '숨기기' : '보기';
+        return;
+      }
+      var chip = e.target.closest('[data-role]');
+      if (!chip) return;
+      var card = chip.closest('.ai-card');
+      var field2 = card.querySelector('[data-f="role"]');
+      field2.value = chip.getAttribute('data-role');
+      card.querySelectorAll('.role-chip').forEach(function (c) { c.classList.toggle('active', c === chip); });
+      syncSummary();
     });
     aiCardsEl.addEventListener('change', function (e) {
       if (e.target.getAttribute('data-f') === 'on') {
         var card = e.target.closest('.ai-card');
         if (card) card.classList.toggle('on', e.target.checked);
-        renderRoleSummary();
+        syncSummary();
       }
-    });
-    aiCardsEl.addEventListener('click', function (e) {
-      var chip = e.target.closest('[data-role]');
-      if (!chip) return;
-      var card = chip.closest('.ai-card');
-      var field = card.querySelector('[data-f="role"]');
-      field.value = chip.getAttribute('data-role');
-      card.querySelectorAll('.role-chip').forEach(function (c) { c.classList.toggle('active', c === chip); });
-      renderRoleSummary();
     });
     aiCardsEl.addEventListener('input', function (e) {
       var f = e.target.getAttribute('data-f');
-      if (f === 'role' || f === 'name') renderRoleSummary();
+      if (f === 'name') {
+        var card = e.target.closest('.ai-card');
+        var av = card && card.querySelector('.avatar');
+        if (av) av.textContent = String(e.target.value.trim()).charAt(0) || 'A';
+      }
+      if (f === 'role' || f === 'name') syncSummary();
     });
+
+    /* AI 추가 패널 */
+    var addBtn = $('#addAiBtn');
+    if (addBtn) addBtn.addEventListener('click', openAddPanel);
+    var addCancel = $('#addAiCancel');
+    if (addCancel) addCancel.addEventListener('click', closeAddPanel);
+    var addConfirm = $('#addAiConfirm');
+    if (addConfirm) addConfirm.addEventListener('click', addAiMember);
+    var providerSel = $('#newAiProvider');
+    if (providerSel) {
+      providerSel.addEventListener('change', function () {
+        $('#newAiName').placeholder = '예: ' + defaultNameFor(providerSel.value) + '2, 유튜브1호';
+      });
+    }
+    var newName = $('#newAiName');
+    if (newName) {
+      newName.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); addAiMember(); }
+      });
+    }
+    var newRole = $('#newAiRole');
+    if (newRole) {
+      newRole.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); addAiMember(); }
+      });
+    }
 
     $('#saveBtn').addEventListener('click', saveSettingsFromModal);
     $('#clearChat').addEventListener('click', function () {

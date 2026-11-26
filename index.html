@@ -89,8 +89,36 @@
       <div id="roleSummary" class="role-summary"></div>
 
       <h3 class="section-title">AI 친구들</h3>
-      <p class="hint">쓰고 싶은 AI만 켜 두세요. 켜 둔 AI들이 <b>맡은 역할대로</b> 차례로 대답해요.</p>
+      <p class="hint">쓰고 싶은 AI만 켜 두세요. 켜 둔 AI들이 <b>맡은 역할대로</b> 차례로 대답해요.<br>같은 AI라도 <b>이름과 역할을 다르게</b> 여러 명 넣을 수 있어요.</p>
       <div id="aiCards"></div>
+
+      <button id="addAiBtn" class="add-ai-btn" type="button">＋ AI 친구 추가</button>
+
+      <div id="addAiPanel" class="add-ai-panel" hidden>
+        <div class="add-ai-head">새 AI 친구</div>
+        <div class="add-ai-grid">
+          <label class="field">
+            <span class="field-label">이름 (@로 부를 이름)</span>
+            <input id="newAiName" maxlength="16" placeholder="예: 제미나이2, 유튜브1호" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field">
+            <span class="field-label">종류</span>
+            <select id="newAiProvider" class="kind-select">
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI ChatGPT</option>
+              <option value="claude">Anthropic Claude</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">담당 역할</span>
+          <input id="newAiRole" maxlength="30" placeholder="예: 유튜브 쇼츠 대본 담당">
+        </label>
+        <div class="add-ai-actions">
+          <button id="addAiCancel" class="ghost-btn sm" type="button">취소</button>
+          <button id="addAiConfirm" class="primary-btn sm" type="button">추가</button>
+        </div>
+      </div>
 
       <h3 class="section-title">공용 공책 <span class="tag-opt">선택</span></h3>
       <p class="hint">폰이랑 PC에서 <b>같은 대화</b>를 보려면 여기에 공용 공책 주소를 넣어 주세요. 비워 두면 이 기기에만 저장돼요.</p>

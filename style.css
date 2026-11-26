@@ -399,6 +399,64 @@ a { color: var(--accent); }
 .ai-foot { font-size: 11.5px; color: #8a95a1; }
 .ai-foot a { color: #5b3fd9; }
 
+/* AI 카드 옆 삭제 버튼 */
+.ai-del {
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  border: 1px solid #e3e8ee;
+  background: #fff;
+  color: #98a2ae;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ai-del:hover { border-color: #f3bdb5; color: #c0392b; background: #fdf5f3; }
+.ai-del:active { transform: scale(.94); }
+
+/* ＋ AI 친구 추가 */
+.add-ai-btn {
+  width: 100%;
+  border: 1px dashed #cfd8e2;
+  background: #fafbfd;
+  color: #4b5663;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+  margin: 0 0 12px;
+}
+.add-ai-btn:hover { background: #f3f6fa; border-color: #b9c6d4; }
+.add-ai-btn:active { transform: scale(.995); }
+
+.add-ai-panel {
+  border: 1px solid #e2e0fb;
+  background: #f8f7ff;
+  border-radius: 14px;
+  padding: 12px;
+  margin: 0 0 12px;
+}
+.add-ai-head { font-size: 13px; font-weight: 700; color: #4a3f78; margin: 0 0 8px; }
+.add-ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.add-ai-grid .field { margin-bottom: 10px; }
+.add-ai-panel .field { margin-bottom: 10px; }
+.kind-select {
+  width: 100%;
+  border: 1px solid #dbe3ea;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  outline: none;
+}
+.kind-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91, 63, 217, .1); }
+.add-ai-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.add-ai-actions .primary-btn.sm { width: auto; }
+@media (max-width: 420px) { .add-ai-grid { grid-template-columns: 1fr; } }
+
 .db-input {
   width: 100%;
   border: 1px solid #dbe3ea;
