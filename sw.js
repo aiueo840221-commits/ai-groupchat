@@ -1,6 +1,6 @@
 /* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함)
-   v10: 새 방은 API AI 0명으로 시작 · 사이드 메뉴 ✕(방에서 빼기) · AI 0명 화면 정리 반영 */
-const CACHE = 'aigc-shell-v10';
+   v11: 모델 이름이 바뀌어 404가 나도 쓸 수 있는 모델을 스스로 찾아 다시 시도 */
+const CACHE = 'aigc-shell-v11';
 const ASSETS = [
   './',
   './index.html',

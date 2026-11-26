@@ -918,7 +918,17 @@
     var st = err && err.status;
     if (st === 401 || st === 403) return name + '가 열쇠를 거절했어요. 열쇠가 맞는지 ⚙️ 설정에서 확인해 주세요!';
     if (st === 429) return name + '가 잠깐 숨을 고르고 있어요. 1분 뒤에 다시 말 걸어 주세요!';
-    if (st === 404) return name + '가 그 모델을 못 찾았어요. 잠시 뒤 다시 해 봐 주세요.';
+    if (st === 404) {
+      var triedModels = (err && isArr(err.triedModels)) ? err.triedModels : [];
+      var rawMsg = errText(err).replace(/\s+/g, ' ').trim();
+      if (rawMsg.length > 110) rawMsg = rawMsg.slice(0, 110) + '…';
+      var bits = [];
+      if (triedModels.length) bits.push('시도한 모델: ' + triedModels.slice(0, 3).join(', ') + (triedModels.length > 3 ? ' 외' : ''));
+      if (rawMsg) bits.push(rawMsg);
+      return name + '가 쓸 수 있는 모델을 못 찾았어요. 모델 이름이 바뀌었거나 이 열쇠로는 못 쓰는 모델이에요.' +
+        (bits.length ? ' (' + bits.join(' / ') + ')' : '') +
+        ' 계속 그러면 ⚙️ 설정에서 열쇠를 다시 확인해 주세요.';
+    }
     if (st >= 500) return name + ' 쪽에 잠깐 문제가 생겼어요. 조금 뒤에 다시 해 봐 주세요.';
     var detail = '';
     try { detail = String((err.data && err.data.error && err.data.error.message) || '').toLowerCase(); } catch (e) { }
@@ -1102,6 +1112,256 @@
     }, function () { throw { code: 'NETWORK' }; });
   }
 
+  /* ---------- 모델 이름 자동 찾기 (모델 404 대비) ----------
+     AI 회사가 모델 이름을 바꾸거나 없애면 예전 이름은 404가 나요. 그래서
+     1) 원래 쓰던 모델로 먼저 해 보고, 404면 열쇠로 쓸 수 있는 모델 목록을 받아 와서
+        가장 알맞은 모델(가볍고 빠른 것 · 최신 것)을 골라 다시 해 봐요.
+     2) 목록도 못 받으면 미리 적어 둔 모델 이름들을 차례로 해 봐요.
+     3) 이번에 성공한 모델은 창을 닫을 때까지 기억해 둬요. (다음부터는 바로 그 모델로) */
+  var GEMINI_BASE = 'https://generativelanguage.googleapis.com';
+  var MODEL_DEFAULT = { gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini', claude: 'claude-3-5-haiku-latest' };
+  var MODEL_FALLBACKS = {
+    gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'],
+    openai: ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4.1-nano'],
+    claude: ['claude-3-5-haiku-latest', 'claude-haiku-4-5-20251001', 'claude-3-7-sonnet-latest', 'claude-sonnet-4-5-20250929']
+  };
+  var modelMemo = {}; /* 'provider|열쇠' → 잘 동작한 모델 이름 (창을 닫으면 사라져요) */
+
+  /* 오류 안에 담긴 회사 쪽 설명을 꺼내요 (없으면 빈 글자) */
+  function errText(err) {
+    try { return String((err && err.data && err.data.error && err.data.error.message) || ''); } catch (e) { return ''; }
+  }
+
+  /* 모델이 없어서(404) 실패한 건지 — 회사마다 표시가 달라요 */
+  function isModelMissing(err) {
+    if (!err) return false;
+    if (err.status === 404) return true;
+    var e = (err.data && err.data.error) || null;
+    if (!e) return false;
+    var tag = String(e.status || e.code || e.type || '').toLowerCase();
+    return tag === 'not_found' || tag === '404' || tag.indexOf('model_not_found') > -1;
+  }
+
+  /* thinking 설정을 모르는 모델이라 거절당한 건지 (400) */
+  function isThinkingIssue(err) {
+    if (!err || err.status !== 400) return false;
+    return errText(err).toLowerCase().indexOf('thinking') > -1;
+  }
+
+  /* 모델 이름에서 버전·가벼운 정도를 뽑아 순서를 정해요 */
+  function modelRank(name) {
+    var ver = parseFloat((/(\d+(?:\.\d+)?)/.exec(name) || [0, '0'])[1]) || 0;
+    var light = /(flash|lite|mini|nano|haiku)/.test(name) ? 1 : 0;
+    var heavy = /(pro|opus|ultra|max|thinking)/.test(name) ? 1 : 0;
+    var draft = /(preview|exp|experimental)/.test(name) ? 1 : 0;
+    return { ver: ver, light: light, heavy: heavy, draft: draft };
+  }
+
+  /* 값싸고 빠른 모델 → 최신 모델 → 시험판 순서로 줄을 세워요 */
+  function rankModels(list) {
+    var seen = {};
+    return list.filter(function (n) {
+      if (!n || seen[n]) return false;
+      seen[n] = true;
+      return true;
+    }).sort(function (a, b) {
+      var ka = modelRank(a), kb = modelRank(b);
+      if (ka.heavy !== kb.heavy) return ka.heavy - kb.heavy;
+      if (ka.light !== kb.light) return kb.light - ka.light;
+      if (kb.ver !== ka.ver) return kb.ver - ka.ver;
+      if (ka.draft !== kb.draft) return ka.draft - kb.draft;
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+  }
+
+  /* Gemini: 이 열쇠로 글쓰기(generateContent)가 되는 flash 계열 모델 이름들 */
+  function geminiModelNames(key) {
+    var acc = [];
+    function page(token, depth) {
+      var url = GEMINI_BASE + '/v1beta/models?pageSize=1000&key=' + encodeURIComponent(key) +
+        (token ? '&pageToken=' + encodeURIComponent(token) : '');
+      return callJson(url, { method: 'GET' }).then(function (data) {
+        ((data && data.models) || []).forEach(function (m) {
+          var name = String((m && m.name) || '').replace(/^models\//, '');
+          var methods = (m && m.supportedGenerationMethods) || [];
+          if (name && methods.indexOf('generateContent') > -1) acc.push(name);
+        });
+        var next = data && data.nextPageToken;
+        if (next && depth < 2) return page(next, depth + 1);
+        return acc;
+      });
+    }
+    return page('', 0).then(function (all) {
+      return rankModels(all.filter(function (n) {
+        return /^gemini-/.test(n) && n.indexOf('flash') > -1 &&
+          !/(image|tts|audio|live|vision|embedding|learnlm|gemma)/.test(n);
+      }));
+    });
+  }
+
+  /* OpenAI: 이 열쇠로 쓸 수 있는 채팅 모델 이름들 */
+  function openaiModelNames(key) {
+    return callJson('https://api.openai.com/v1/models', {
+      method: 'GET', headers: { 'Authorization': 'Bearer ' + key }
+    }).then(function (data) {
+      var ids = ((data && data.data) || []).map(function (m) { return String((m && m.id) || ''); });
+      return rankModels(ids.filter(function (id) {
+        return /^gpt-/.test(id) && !/(audio|realtime|tts|transcribe|image|search|moderation|embedding|codex|instruct|dall|sora)/.test(id);
+      }));
+    });
+  }
+
+  /* Claude: 이 열쇠로 쓸 수 있는 채팅 모델 이름들 */
+  function claudeModelNames(key) {
+    return callJson('https://api.anthropic.com/v1/models?limit=100', {
+      method: 'GET',
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      }
+    }).then(function (data) {
+      var ids = ((data && data.data) || []).map(function (m) { return String((m && m.id) || ''); });
+      return rankModels(ids.filter(function (id) { return /^claude-/.test(id); }));
+    });
+  }
+
+  /* 모델을 차례로 시도: 원래 모델 → (404면) 자동으로 찾은 모델 → 미리 적어 둔 모델 */
+  function askWithModelFallback(provider, key, attempt, discover) {
+    var memoKey = provider + '|' + key;
+    var memo = modelMemo[memoKey];
+    var defaultModel = MODEL_DEFAULT[provider];
+    var pending = [];
+    var tried = [];
+    var lastErr = null;
+    var stage = 0;
+
+    if (memo && memo !== defaultModel) pending.push(memo);
+    pending.push(defaultModel);
+
+    function finish() {
+      var err = lastErr || { status: 404, code: 'HTTP' };
+      err.triedModels = tried.slice();
+      err.provider = provider;
+      throw err;
+    }
+
+    function next() {
+      if (!pending.length) return advance();
+      var model = pending.shift();
+      if (tried.indexOf(model) > -1) return next();
+      tried.push(model);
+      return attempt(model).then(function (text) {
+        modelMemo[memoKey] = model;
+        return text;
+      }, function (err) {
+        if (isModelMissing(err)) { lastErr = err; return next(); }
+        throw err;
+      });
+    }
+
+    function advance() {
+      if (stage === 0) {
+        stage = 1;
+        return discover(key).then(function (models) {
+          pending = (models || []).filter(function (m) { return tried.indexOf(m) < 0; });
+          return next();
+        }, function () { return advance(); });
+      }
+      if (stage === 1) {
+        stage = 2;
+        pending = MODEL_FALLBACKS[provider].filter(function (m) { return tried.indexOf(m) < 0; });
+        return next();
+      }
+      return finish();
+    }
+
+    return next();
+  }
+
+  function geminiText(data) {
+    var cand = data && data.candidates && data.candidates[0];
+    var parts = (cand && cand.content && cand.content.parts) || [];
+    var text = parts.map(function (p) { return p.text || ''; }).join('').trim();
+    if (!text) throw { code: 'EMPTY' };
+    return text;
+  }
+
+  function askGemini(key, sys, hist) {
+    var contents = toGemini(hist);
+    return askWithModelFallback('gemini', key, function (model) {
+      function post(withThinking) {
+        var gen = { temperature: 0.9, maxOutputTokens: 700 };
+        if (withThinking) gen.thinkingConfig = { thinkingBudget: 0 };
+        var url = GEMINI_BASE + '/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
+        return callJson(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: sys }] },
+            contents: contents,
+            generationConfig: gen
+          })
+        }).then(geminiText);
+      }
+      /* thinking 설정을 모르는 모델이면 그 설정만 빼고 한 번 더 */
+      return post(true).then(null, function (err) {
+        if (isThinkingIssue(err)) return post(false);
+        throw err;
+      });
+    }, geminiModelNames);
+  }
+
+  function askOpenai(key, sys, hist) {
+    var msgs = [{ role: 'system', content: sys }].concat(hist.map(function (h) {
+      return { role: h.role, content: h.text };
+    }));
+    return askWithModelFallback('openai', key, function (model) {
+      /* 예전 모델은 max_tokens·temperature, 새 모델은 max_completion_tokens 를 써요 */
+      function post(oldStyle) {
+        var body = { model: model, messages: msgs };
+        if (oldStyle) { body.max_tokens = 600; body.temperature = 0.9; }
+        else body.max_completion_tokens = 600;
+        return callJson('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify(body)
+        }).then(function (data) {
+          var ch = data && data.choices && data.choices[0];
+          var text = ch && ch.message && ch.message.content;
+          if (!text) throw { code: 'EMPTY' };
+          return String(text).trim();
+        });
+      }
+      return post(true).then(null, function (err) {
+        if (err && err.status === 400 && /max_tokens|max_completion_tokens|temperature/i.test(errText(err))) {
+          return post(false);
+        }
+        throw err;
+      });
+    }, openaiModelNames);
+  }
+
+  function askClaude(key, sys, hist) {
+    var msgs = hist.map(function (h) { return { role: h.role, content: h.text }; });
+    return askWithModelFallback('claude', key, function (model) {
+      return callJson('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({ model: model, max_tokens: 600, system: sys, messages: msgs })
+      }).then(function (data) {
+        var text = ((data && data.content) || []).map(function (b) { return b.text || ''; }).join('').trim();
+        if (!text) throw { code: 'EMPTY' };
+        return text;
+      });
+    }, claudeModelNames);
+  }
+
   function askAI(id, opts) {
     var ai = aiById(id);
     if (!ai) return Promise.reject({ code: 'GONE' });
@@ -1112,66 +1372,9 @@
     var hist = buildHistory(id);
     if (opts && opts.battle) hist.push({ role: 'user', text: battlePromptFor(id) });
 
-    if (provider === 'gemini') {
-      var gBody = {
-        systemInstruction: { parts: [{ text: sys }] },
-        contents: toGemini(hist),
-        generationConfig: { temperature: 0.9, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } }
-      };
-      return callJson('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gBody)
-      }).then(function (data) {
-        var cand = data && data.candidates && data.candidates[0];
-        var parts = (cand && cand.content && cand.content.parts) || [];
-        var text = parts.map(function (p) { return p.text || ''; }).join('').trim();
-        if (!text) throw { code: 'EMPTY' };
-        return text;
-      });
-    }
-
-    if (provider === 'openai') {
-      var oBody = {
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'system', content: sys }].concat(hist.map(function (h) {
-          return { role: h.role, content: h.text };
-        })),
-        max_tokens: 600,
-        temperature: 0.9
-      };
-      return callJson('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify(oBody)
-      }).then(function (data) {
-        var ch = data && data.choices && data.choices[0];
-        var text = ch && ch.message && ch.message.content;
-        if (!text) throw { code: 'EMPTY' };
-        return String(text).trim();
-      });
-    }
-
-    var cBody = {
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: 600,
-      system: sys,
-      messages: hist.map(function (h) { return { role: h.role, content: h.text }; })
-    };
-    return callJson('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(cBody)
-    }).then(function (data) {
-      var text = ((data && data.content) || []).map(function (b) { return b.text || ''; }).join('').trim();
-      if (!text) throw { code: 'EMPTY' };
-      return text;
-    });
+    if (provider === 'openai') return askOpenai(key, sys, hist);
+    if (provider === 'claude') return askClaude(key, sys, hist);
+    return askGemini(key, sys, hist);
   }
 
   /* ---------- 공용 공책 (선택) ---------- */
