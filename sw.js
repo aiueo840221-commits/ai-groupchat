@@ -1,6 +1,6 @@
 /* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함)
-   v9: ☰ 사이드 메뉴 · 불필요한 재그리기 줄임(참여자·불빛·이름 바꾸기·확인 주기) 반영 */
-const CACHE = 'aigc-shell-v9';
+   v10: 새 방은 API AI 0명으로 시작 · 사이드 메뉴 ✕(방에서 빼기) · AI 0명 화면 정리 반영 */
+const CACHE = 'aigc-shell-v10';
 const ASSETS = [
   './',
   './index.html',

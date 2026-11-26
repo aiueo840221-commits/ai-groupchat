@@ -58,7 +58,7 @@
   ];
   var TIER_DEFAULT = 'iron'; /* 새 AI·티어 정보가 없을 때 시작 티어 (기본은 모두 아이언) */
 
-  /* 처음 쓰는 방에 들어갈 기본 멤버 3명 (예전 버전과 같은 이름·열쇠 자리) */
+  /* 예전(고정 3명) 방을 옮길 때 쓰는 기본 멤버 3명 — 새 방에는 자동으로 넣지 않아요 */
   var MEMBER_DEFAULTS = [
     { id: 'gemini', provider: 'gemini', name: '제미나이', on: true, persona: '', role: '블로그 원고 담당', tier: 'iron' },
     { id: 'openai', provider: 'openai', name: '지피티', on: false, persona: '', role: '스레드 카피·아이디어 담당', tier: 'iron' },
@@ -367,8 +367,11 @@
   function messagesKey() { return ns + '.messages'; }
   function dbPath() { return 'rooms/' + encodeURIComponent(roomId + '_' + roomKey) + '/messages.json'; }
 
-  /* 예전 버전(고정 3명) 저장값을 새 목록 형식으로 바꿔요 */
+  /* 저장된 AI 목록을 읽어 와요.
+     - 저장값이 아예 없는 ‘새 방’은 빈 목록([])으로 시작해요 (기본 API AI를 넣지 않음)
+     - 이미 목록이 있는 방은 그 목록을 그대로 살려요 (빈 목록도 그대로) */
   function migrateAis(raw) {
+    if (raw == null) return [];
     var out = [];
     function push(provider, id, a, fallbackRole, fallbackOn, fallbackTier) {
       a = (a && typeof a === 'object') ? a : {};
@@ -406,14 +409,6 @@
       });
     }
 
-    if (!out.length) {
-      MEMBER_DEFAULTS.forEach(function (d) {
-        out.push({
-          id: d.id, provider: d.provider, name: d.name, role: d.role, tier: d.tier,
-          on: d.on, apiKey: '', persona: d.persona, colorIndex: nextColorIndex(d.provider, out)
-        });
-      });
-    }
     return out;
   }
 
@@ -488,9 +483,13 @@
   }
 
   function renderBadges() {
+    var all = memberList();
     var on = enabledAis();
     var html = '<span class="badge badge-lock">🔒 비밀 방</span>';
-    if (!on.length) {
+    if (!all.length) {
+      /* API AI가 0명이어도 깔끔하게: 외부 비서만 있는 방 */
+      html += '<span class="badge badge-none" title="⚙️에서 AI를 추가하거나 🤖 초대 문구로 외부 비서를 불러 보세요">AI 0명 · 외부 비서만</span>';
+    } else if (!on.length) {
       html += '<span class="badge badge-off">AI 모두 꺼짐</span>';
     } else {
       html += on.map(function (a) {
@@ -506,10 +505,19 @@
 
   function renderChips() {
     var on = enabledAis();
-    var html = '<button class="chip chip-all" type="button" data-mention="__all">전체 (각자 역할대로)</button>';
-    html += on.map(function (a) {
-      return '<button class="chip" type="button" data-mention="' + esc(a.name) + '" style="--c1:' + colorsOf(a).c1 + '">@' + esc(a.name) + '</button>';
-    }).join('');
+    var html = '';
+    if (on.length) {
+      html += '<button class="chip chip-all" type="button" data-mention="__all">전체 (각자 역할대로)</button>';
+      html += on.map(function (a) {
+        return '<button class="chip" type="button" data-mention="' + esc(a.name) + '" style="--c1:' + colorsOf(a).c1 + '">@' + esc(a.name) + '</button>';
+      }).join('');
+    } else if (memberList().length) {
+      /* AI는 있는데 모두 꺼져 있으면 ‘전체’ 칩을 숨기고 안내만 */
+      html = '<span class="chips-hint">켜진 AI가 없어요 · ☰ 사이드 메뉴에서 불빛을 눌러 켜 주세요</span>';
+    } else {
+      /* API AI 0명: 외부 비서 중심 안내 */
+      html = '<span class="chips-hint">내 AI는 아직 0명이에요 · ⚙️에서 추가하거나, 외부 비서는 @이름으로 불러요</span>';
+    }
     chipsEl.innerHTML = html;
   }
 
@@ -608,11 +616,15 @@
       var nameField = r.kind === 'me'
         ? '<input class="roster-name" value="' + esc(r.name) + '" readonly aria-label="내 이름">'
         : '<input class="roster-name" value="' + esc(r.name) + '" maxlength="' + (r.kind === 'ext' ? 24 : NAME_MAX) + '" data-rename="' + esc(r.key) + '" data-kind="' + r.kind + '" placeholder="' + esc(r.kind === 'ai' ? defaultNameFor(ai.provider) : r.key) + '" aria-label="' + esc(r.name + ' 이름 바꾸기') + '" autocomplete="off" spellcheck="false">';
+      /* 내 AI 줄에는 ‘방에서 빼기(✕)’를 바로 붙여요 — 설정 창에 들어가지 않아도 한 번에 */
+      var delBtn = r.kind === 'ai'
+        ? '<button type="button" class="roster-del" data-roster-del="' + esc(r.key) + '" title="방에서 빼기" aria-label="' + esc(r.name + ' 방에서 빼기') + '">✕</button>'
+        : '';
       return '<div class="roster-row ' + r.kind + (r.on ? '' : ' off') + '" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
         light +
         '<div class="avatar" aria-hidden="true">' + esc(String(r.name).charAt(0) || 'A') + '</div>' +
         '<div class="roster-main">' + nameField + '<div class="roster-meta">' + esc(r.meta) + '</div></div>' +
-        '<div class="roster-tools"><span class="roster-kind ' + r.kind + '">' + r.label + '</span></div>' +
+        '<div class="roster-tools"><span class="roster-kind ' + r.kind + '">' + r.label + '</span>' + delBtn + '</div>' +
         '</div>';
     }).join('');
   }
@@ -706,6 +718,26 @@
     render();
     renderRoster(true);
     toast(a.name + (a.on ? ' 켰어요 🔵' : ' 껐어요 🔴'));
+  }
+
+  /* 사이드 메뉴 ✕ — 설정 창을 열지 않고 바로 방에서 빼기 (API AI 0명까지 가능) */
+  function removeAiFromRoster(id) {
+    if (!settings) return;
+    var a = aiById(id);
+    if (!a) return;
+    var name = a.name;
+    settings.ais = memberList().filter(function (x) { return x.id !== id; });
+    /* 지난 대화 말풍선에 이름이 남도록 settings.names는 지우지 않아요 */
+    if (draftAis) {
+      draftAis = draftAis.filter(function (x) { return x.id !== id; });
+      renderAiCards();
+      renderRoleSummary();
+    }
+    saveSettings();
+    render();
+    renderRoster(true);
+    battleMetaUpdate();
+    toast(name + '를 방에서 뺐어요. 다시 넣으려면 ⚙️에서 추가해 주세요.');
   }
 
   function pullNow() {
@@ -812,9 +844,14 @@
     if (!ids.length) {
       var named = scanMentions(text).ids.map(aiById).filter(Boolean);
       var offNamed = named.filter(function (a) { return !a.on; });
-      var msg = offNamed.length
-        ? '불러준 ' + offNamed.map(function (a) { return a.name; }).join(', ') + '가 지금 꺼져 있어요. ⚙️에서 켜 주세요!'
-        : '지금은 AI 친구가 모두 꺼져 있어요. 오른쪽 위 ⚙️에서 켜 주세요!';
+      var msg;
+      if (!memberList().length) {
+        msg = '아직 이 방에 AI 친구가 없어요. ⚙️에서 AI를 추가하거나, 🤖 초대 문구로 외부 비서를 불러 보세요!';
+      } else if (offNamed.length) {
+        msg = '불러준 ' + offNamed.map(function (a) { return a.name; }).join(', ') + '가 지금 꺼져 있어요. ⚙️에서 켜 주세요!';
+      } else {
+        msg = '지금은 AI 친구가 모두 꺼져 있어요. 오른쪽 위 ⚙️에서 켜 주세요!';
+      }
       pushMessage({ who: 'system', text: msg });
       render();
       return;
@@ -914,7 +951,10 @@
 
   function battleMetaText() {
     var on = enabledAis();
-    var names = on.length ? on.map(function (a) { return a.name + '(' + tierOf(a).name + ')'; }).join(' · ') : '없음 (⚙️에서 AI를 켜 주세요)';
+    var names;
+    if (on.length) names = on.map(function (a) { return a.name + '(' + tierOf(a).name + ')'; }).join(' · ');
+    else if (!memberList().length) names = '없음 (아직 AI 친구가 없어요 — ⚙️에서 추가해 주세요)';
+    else names = '없음 (켜진 API AI가 없어요 — ☰에서 불빛을 눌러 켜 주세요)';
     var when = (settings && settings.lastBattleAt)
       ? '지난 승급전: ' + fmtDateTime(settings.lastBattleAt)
       : '아직 승급전을 한 번도 안 했어요.';
@@ -947,9 +987,12 @@
     var on = enabledAis();
     if (!modal.hidden) closeSettings();
     if (!on.length) {
-      pushMessage({ who: 'system', text: '켜진 AI가 없어서 승급전을 열 수 없어요. ⚙️에서 AI를 먼저 켜 주세요!' });
+      var noAi = memberList().length
+        ? '켜진 API AI가 없어요. ☰ 사이드 메뉴에서 불빛을 누르거나 ⚙️에서 AI를 켜 주세요!'
+        : '켜진 API AI가 없어요. ⚙️에서 AI 친구를 추가하거나, 🤖 초대 문구로 외부 비서를 불러 보세요!';
+      pushMessage({ who: 'system', text: noAi });
       render();
-      toast('켜진 AI가 없어요. ⚙️에서 AI를 먼저 켜 주세요!');
+      toast(noAi);
       return;
     }
     var lineup = on.map(function (a) { return a.name + '(' + tierOf(a).name + ')'; }).join(' · ');
@@ -1332,6 +1375,10 @@
 
   function renderAiCards() {
     if (!draftAis) return;
+    if (!draftAis.length) {
+      aiCardsEl.innerHTML = '<p class="ai-empty">아직 AI 친구가 없어요. 아래 <b>＋ AI 친구 추가</b>를 눌러 넣어 주세요.<br>외부 비서(아이·피클2호 등)만으로도 채팅은 그대로 쓸 수 있어요.</p>';
+      return;
+    }
     aiCardsEl.innerHTML = draftAis.map(function (a) {
       var info = providerInfo(a.provider);
       var col = colorsOf(a);
@@ -1407,10 +1454,17 @@
         '</div>');
     });
     var onCount = draftAis.filter(function (a) { return a.on; }).length;
-    el.innerHTML = rows.join('') +
-      '<p class="role-note">' + (onCount > 1
-        ? '‘전체 (각자 역할대로)’에게 말하면 위에서부터 한 명씩, 앞사람 답변을 보고 자기 역할만 해요. ▲▼로 티어를 바로 올리고 내릴 수 있어요.'
-        : 'AI를 두 명 이상 켜면 역할을 나눠서 이어서 일해요. ▲▼로 티어를 바로 올리고 내릴 수 있어요.') + '</p>';
+    var note;
+    if (!draftAis.length) {
+      note = '아직 AI 친구가 없어요. 아래 <b>＋ AI 친구 추가</b>로 직접 넣거나, 🤖 초대 문구로 부른 외부 비서(아이·피클2호 등)는 ☰ 사이드 메뉴에 보여요.';
+    } else if (!onCount) {
+      note = '켜 둔 AI가 없어서 지금은 아무도 답하지 않아요. 오른쪽 스위치나 ☰ 사이드 메뉴 불빛을 눌러 켜 주세요.';
+    } else if (onCount > 1) {
+      note = '‘전체 (각자 역할대로)’에게 말하면 위에서부터 한 명씩, 앞사람 답변을 보고 자기 역할만 해요. ▲▼로 티어를 바로 올리고 내릴 수 있어요.';
+    } else {
+      note = 'AI를 두 명 이상 켜면 역할을 나눠서 이어서 일해요. ▲▼로 티어를 바로 올리고 내릴 수 있어요.';
+    }
+    el.innerHTML = rows.join('') + '<p class="role-note">' + note + '</p>';
   }
 
   /* 설정 창 안에서 값을 고치는 대로 ‘역할 한눈에 보기’도 같이 맞춰요 */
@@ -1511,7 +1565,7 @@
     var role = $('#newAiRole').value.trim();
     if (!name) {
       var sameProvider = draftAis.filter(function (a) { return a.provider === provider; }).length;
-      name = defaultNameFor(provider) + (sameProvider + 1);
+      name = defaultNameFor(provider) + (sameProvider ? (sameProvider + 1) : '');
     }
     name = uniqueName(name, draftAis, '');
     var apiKey = '';
@@ -1547,7 +1601,6 @@
   function removeAiMember(id) {
     if (!draftAis) return;
     readCards();
-    if (draftAis.length <= 1) { toast('AI는 최소 한 명은 남겨 둬야 해요.'); return; }
     var gone = null;
     draftAis = draftAis.filter(function (a) {
       if (a.id === id) { gone = a; return false; }
@@ -1711,6 +1764,12 @@
     if (drawerEl) {
       drawerEl.addEventListener('click', function (e) {
         if (e.target.closest('[data-drawer-close]')) { closeDrawer(); return; }
+        var delRosterBtn = e.target.closest('[data-roster-del]');
+        if (delRosterBtn) {
+          e.preventDefault();
+          removeAiFromRoster(delRosterBtn.getAttribute('data-roster-del'));
+          return;
+        }
         var lightBtn = e.target.closest('[data-toggle-ai]');
         if (lightBtn) {
           e.preventDefault();
