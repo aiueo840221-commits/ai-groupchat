@@ -517,6 +517,7 @@
   var CHECK_EVERY_OPTIONS = [0, 1, 5, 10, 30, 60];
   var EXT_ONLINE_MS = 10 * 60 * 1000; /* 외부 비서는 10분 안에 글을 남기면 ‘들어와 있음’ */
   var rosterTimer = null;
+  var rosterSig = '';
 
   function checkEvery() {
     var v = parseInt(settings && settings.checkEvery, 10);
@@ -589,6 +590,10 @@
     /* 이름을 고치는 중에는 다시 그리지 않아요 (커서가 튀지 않게) */
     if (!force && rosterEl.contains(document.activeElement)) return;
     var rows = rosterRows();
+    /* 상태가 그대로면 다시 그리지 않아요 (입력 중 커서·스크롤이 튀지 않게) */
+    var sigStr = rows.map(function (r) { return r.kind + ':' + r.key + ':' + (r.on ? 1 : 0) + ':' + r.name + ':' + r.meta; }).join('|');
+    if (!force && sigStr === rosterSig) return;
+    rosterSig = sigStr;
     if (drawerCountEl) drawerCountEl.textContent = rows.length + '명';
     rosterEl.innerHTML = rows.map(function (r) {
       var ai = r.kind === 'ai' ? aiById(r.key) : null;
