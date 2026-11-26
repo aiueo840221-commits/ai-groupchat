@@ -1,5 +1,5 @@
 /* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함) */
-const CACHE = 'aigc-shell-v3';
+const CACHE = 'aigc-shell-v4';
 const ASSETS = [
   './',
   './index.html',
