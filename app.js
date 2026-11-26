@@ -114,6 +114,9 @@
   var pendingBattle = {}; /* 승급전 평가로 기다리는 AI (말풍선을 '평가 중'으로) */
   var rankBusy = false;   /* 승급전 평가가 도는 중인지 */
 
+  /* 기본 공용 공책 — 설정에서 다른 주소로 바꿀 수 있어요 */
+  var DEFAULT_DB_URL = 'https://aigc-sync-room-default-rtdb.firebaseio.com';
+
   /* ---------- 작은 도구들 ---------- */
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -162,6 +165,8 @@
     while (s.slice(-1) === '/') s = s.slice(0, -1);
     return s;
   }
+  /* 공용 공책 주소: 붙여넣기 할 때 섞여 들어간 공백·줄바꿈은 모두 지워요 */
+  function cleanDbUrl(v) { return stripSlash(String(v || '').replace(/\s+/g, '')); }
 
   /* ---------- AI 멤버(동적 목록) 다루기 ---------- */
   function memberList() { return (settings && isArr(settings.ais)) ? settings.ais : []; }
@@ -406,7 +411,7 @@
     var saved = read(settingsKey()) || {};
     var s = {
       roomName: saved.roomName || '우리들 단톡방',
-      dbUrl: saved.dbUrl || '',
+      dbUrl: saved.dbUrl ? cleanDbUrl(saved.dbUrl) : (saved.dbOff ? '' : DEFAULT_DB_URL),
       clearedAt: saved.clearedAt || 0,
       lastBattleAt: saved.lastBattleAt || 0,
       ais: migrateAis(saved.ais),
@@ -913,7 +918,7 @@
   }
 
   /* ---------- 공용 공책 (선택) ---------- */
-  function dbBase() { return stripSlash(settings.dbUrl); }
+  function dbBase() { return cleanDbUrl(settings.dbUrl); }
 
   function pushToDb(m) {
     var base = dbBase();
@@ -1342,7 +1347,7 @@
   function saveSettingsFromModal() {
     if (!draftAis) draftAis = memberList().map(cloneAi);
     readCards();
-    var db = stripSlash($('#setDbUrl').value.trim());
+    var db = cleanDbUrl($('#setDbUrl').value);
     if (db && !isHttpUrl(db)) { toast('공용 공책 주소는 https://로 시작해야 해요'); return; }
 
     var used = {};
@@ -1377,6 +1382,7 @@
     next.forEach(function (a) { names[a.id] = a.name; });
     settings.names = names;
     settings.dbUrl = db;
+    settings.dbOff = !db; /* 칸을 비우고 저장하면 이 기기에만 저장 */
     saveSettings();
     updateHash();
     roomInput.value = settings.roomName;
@@ -1600,8 +1606,9 @@
     ns = 'aigc.v1.' + roomId + '_' + roomKey;
 
     settings = loadSettings();
-    if (creds.db && isHttpUrl(creds.db) && stripSlash(creds.db) !== settings.dbUrl) {
-      settings.dbUrl = stripSlash(creds.db);
+    if (creds.db && isHttpUrl(creds.db) && cleanDbUrl(creds.db) !== cleanDbUrl(settings.dbUrl)) {
+      settings.dbUrl = cleanDbUrl(creds.db);
+      settings.dbOff = false;
       saveSettings();
     }
     messages = loadMessages();
