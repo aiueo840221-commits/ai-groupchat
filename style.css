@@ -662,3 +662,93 @@ a { color: var(--accent); }
 .battle-btn:active { transform: scale(.995); }
 .battle-btn:disabled { opacity: .65; cursor: default; }
 .battle-meta { font-size: 11.5px; color: #8a7a4d; line-height: 1.5; margin-top: 8px; }
+
+/* ---------- ☰ 사이드 메뉴 (참여자 · 이름 바꾸기 · 확인 주기) ---------- */
+.menu-btn { flex: 0 0 auto; margin-right: 2px; font-size: 18px; }
+
+.drawer { position: fixed; inset: 0; z-index: 56; display: flex; }
+.drawer-back { position: absolute; inset: 0; background: rgba(15, 20, 28, .45); animation: fadein .18s ease; }
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.drawer-panel {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: max(0px, calc(50% - 380px));
+  width: min(88vw, 330px);
+  background: #fff;
+  border-radius: 0 20px 20px 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 6px 0 34px rgba(15, 20, 28, .22);
+  animation: slidein .22s ease;
+  padding-top: env(safe-area-inset-top);
+}
+@keyframes slidein { from { transform: translateX(-24px); opacity: .65; } to { transform: none; opacity: 1; } }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 4px; }
+.drawer-head h2 { margin: 0; font-size: 17px; letter-spacing: -.2px; display: flex; align-items: center; gap: 6px; }
+.drawer-count { font-size: 11.5px; font-weight: 600; color: #6b7684; background: #f0f3f6; border-radius: 999px; padding: 2px 8px; }
+.drawer-body { overflow-y: auto; padding: 0 16px calc(20px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+.drawer-body .section-title:first-child { margin-top: 8px; }
+.drawer-row { display: flex; gap: 8px; align-items: center; }
+.drawer-row .kind-select { flex: 1 1 auto; min-width: 0; }
+.roster-legend { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500; color: #7c8794; vertical-align: 1px; }
+.roster-legend .light { width: 8px; height: 8px; }
+.roster-legend .light + .light, .roster-legend .light:nth-of-type(2) { margin-left: 4px; }
+
+.light {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #e0555f;
+  box-shadow: 0 0 0 3px rgba(224, 85, 95, .14);
+}
+.light.on { background: #2f9cf4; box-shadow: 0 0 0 3px rgba(47, 156, 244, .18), 0 0 6px rgba(47, 156, 244, .55); }
+.light.off { background: #e0555f; box-shadow: 0 0 0 3px rgba(224, 85, 95, .14); }
+
+.roster { border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; background: #fafbfc; }
+.roster-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid #f0f2f5; }
+.roster-row:last-child { border-bottom: none; }
+.roster-row .avatar { width: 30px; height: 30px; font-size: 13px; flex: 0 0 auto; }
+.roster-row.ext .avatar { background: linear-gradient(135deg, #6b7684, #454f5b); }
+.roster-main { flex: 1 1 auto; min-width: 0; }
+.roster-name {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 7px;
+  padding: 2px 4px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--ink);
+}
+.roster-name:hover { border-color: #e3e8ee; background: #fff; }
+.roster-name:focus { outline: none; border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(91, 63, 217, .1); }
+.roster-meta { font-size: 11px; color: #8a95a1; padding: 1px 5px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-row.off .roster-name, .roster-row.off .roster-meta { color: #98a2ad; }
+.roster-row.off { opacity: .8; }
+.roster-row.me .roster-name { background: transparent; border-color: transparent; cursor: default; }
+.roster-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
+.roster-kind { font-size: 9.5px; font-weight: 700; color: #8a95a1; background: #f0f3f6; border-radius: 5px; padding: 1px 5px; letter-spacing: .2px; }
+.roster-kind.ext { color: #5b6b8c; background: #eaf0fa; }
+.roster-kind.me { color: #6b5a00; background: #fff4c2; }
+
+/* 불빛 누르기 버튼 (내 AI는 눌러서 켜기/끄기) */
+.light-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+button.light-btn:hover { background: rgba(47, 156, 244, .12); }
+button.light-btn:active { transform: scale(.92); }
+.light-btn .light { pointer-events: none; }
+
+.check-preview { margin-top: 8px; background: #f7f9fc; border-radius: 9px; padding: 7px 9px; }
+.check-preview b { color: #3b4753; }

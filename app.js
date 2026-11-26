@@ -98,6 +98,11 @@
   var modal = $('#modal');
   var aiCardsEl = $('#aiCards');
   var dbStatusEl = $('#dbStatus');
+  var drawerEl = $('#drawer');
+  var rosterEl = $('#roster');
+  var drawerCountEl = $('#drawerCount');
+  var drawerDbStatusEl = $('#drawerDbStatus');
+  var checkEveryEl = $('#checkEvery');
 
   /* ---------- 상태 ---------- */
   var settings = null;
@@ -420,7 +425,8 @@
       clearedAt: saved.clearedAt || 0,
       lastBattleAt: saved.lastBattleAt || 0,
       ais: migrateAis(saved.ais),
-      names: (saved.names && typeof saved.names === 'object') ? saved.names : {}
+      names: (saved.names && typeof saved.names === 'object') ? saved.names : {},
+      checkEvery: saved.checkEvery
     };
     s.ais.forEach(function (a) { s.names[a.id] = a.name; });
     return s;
@@ -477,6 +483,7 @@
     renderBadges();
     renderChips();
     renderChat();
+    renderRoster(false);
     if (near) chatEl.scrollTop = chatEl.scrollHeight;
   }
 
@@ -504,6 +511,195 @@
       return '<button class="chip" type="button" data-mention="' + esc(a.name) + '" style="--c1:' + colorsOf(a).c1 + '">@' + esc(a.name) + '</button>';
     }).join('');
     chipsEl.innerHTML = html;
+  }
+
+  /* ---------- ☰ 사이드 메뉴 (참여자 · 불빛 · 이름 바꾸기 · 확인 주기) ---------- */
+  var CHECK_EVERY_OPTIONS = [0, 1, 5, 10, 30, 60];
+  var EXT_ONLINE_MS = 10 * 60 * 1000; /* 외부 비서는 10분 안에 글을 남기면 ‘들어와 있음’ */
+  var rosterTimer = null;
+
+  function checkEvery() {
+    var v = parseInt(settings && settings.checkEvery, 10);
+    if (!isFinite(v) || CHECK_EVERY_OPTIONS.indexOf(v) < 0) v = 5;
+    return v;
+  }
+  function checkEveryLabel(v) { return v ? (v + '분마다') : '수동(부르면)'; }
+  function checkEveryPhrase(v) { return v ? (v + '분마다 새 글을 확인해서 답해 줘') : '내가 부를 때만 새 글을 확인해 줘'; }
+  function renderCheckPreview() {
+    var el = $('#checkEveryPreview');
+    if (!el) return;
+    el.innerHTML = '🤖 초대 문구에 이렇게 들어가요: <b>' + esc(checkEveryPhrase(checkEvery())) + '</b>';
+  }
+
+  function relTime(ts) {
+    var diff = Math.max(0, Date.now() - (ts || 0));
+    if (diff < 60 * 1000) return '방금';
+    if (diff < 60 * 60 * 1000) return Math.floor(diff / 60000) + '분 전';
+    if (diff < 24 * 60 * 60 * 1000) return Math.floor(diff / 3600000) + '시간 전';
+    return Math.floor(diff / 86400000) + '일 전';
+  }
+
+  /* 내가 넣은 AI가 아닌데 공용 공책에 글을 쓴 비서들 (아이·피클2호 등) */
+  function externalParticipants() {
+    var map = {};
+    var list = [];
+    messages.forEach(function (m) {
+      if (!m || m.err) return;
+      if (!isAiMessage(m.who)) return;
+      if (aiById(m.who)) return;
+      var who = String(m.who);
+      var p = map[who];
+      if (!p) { p = map[who] = { who: who, ts: 0, roleTag: '', count: 0 }; list.push(p); }
+      p.count++;
+      if ((m.ts || 0) >= p.ts) {
+        p.ts = m.ts || 0;
+        if (m.roleTag) p.roleTag = String(m.roleTag);
+      }
+    });
+    list.sort(function (a, b) { return b.ts - a.ts; });
+    return list;
+  }
+
+  function rosterRows() {
+    var rows = [{ kind: 'me', key: 'me', name: USER_NAME, on: true, label: '나', meta: '시키는 사람 (사장님)' }];
+    memberList().forEach(function (a) {
+      var role = String(a.role || '').trim();
+      rows.push({
+        kind: 'ai', key: a.id, name: a.name, on: !!a.on, label: 'AI',
+        meta: providerInfo(a.provider).label + (role ? ' · ' + role : '') + (a.on ? ' · 켜짐' : ' · 꺼짐')
+      });
+    });
+    externalParticipants().forEach(function (p) {
+      var online = (Date.now() - p.ts) < EXT_ONLINE_MS;
+      rows.push({
+        kind: 'ext', key: p.who, name: nameOf(p.who), on: online, label: '외부',
+        meta: (p.roleTag ? p.roleTag + ' · ' : '') + relTime(p.ts) + ' 활동' + (online ? ' · 들어와 있음' : ' · 안 들어옴')
+      });
+    });
+    return rows;
+  }
+
+  function renderRoster(force) {
+    if (!rosterEl || !drawerEl || drawerEl.hidden) return;
+    /* 이름을 고치는 중에는 다시 그리지 않아요 (커서가 튀지 않게) */
+    if (!force && rosterEl.contains(document.activeElement)) return;
+    var rows = rosterRows();
+    if (drawerCountEl) drawerCountEl.textContent = rows.length + '명';
+    rosterEl.innerHTML = rows.map(function (r) {
+      var ai = r.kind === 'ai' ? aiById(r.key) : null;
+      var col = r.kind === 'ai' ? colorsOf(ai) : (r.kind === 'ext' ? { c1: '#6b7684', c2: '#454f5b' } : { c1: '#191919', c2: '#191919' });
+      var state = r.on ? 'on' : 'off';
+      var hint = r.kind === 'ai'
+        ? (r.on ? '켜져 있음 · 눌러서 끄기' : '꺼져 있음 · 눌러서 켜기')
+        : (r.on ? '들어와 있음' : '안 들어옴');
+      var light = r.kind === 'ai'
+        ? '<button type="button" class="light-btn" data-toggle-ai="' + esc(r.key) + '" title="' + esc(hint) + '" aria-label="' + esc(r.name + ' ' + (r.on ? '끄기' : '켜기')) + '" aria-pressed="' + (r.on ? 'true' : 'false') + '"><span class="light ' + state + '"></span></button>'
+        : '<span class="light-btn" title="' + esc(hint) + '" role="img" aria-label="' + esc(hint) + '"><span class="light ' + state + '"></span></span>';
+      var nameField = r.kind === 'me'
+        ? '<input class="roster-name" value="' + esc(r.name) + '" readonly aria-label="내 이름">'
+        : '<input class="roster-name" value="' + esc(r.name) + '" maxlength="' + (r.kind === 'ext' ? 24 : NAME_MAX) + '" data-rename="' + esc(r.key) + '" data-kind="' + r.kind + '" placeholder="' + esc(r.kind === 'ai' ? defaultNameFor(ai.provider) : r.key) + '" aria-label="' + esc(r.name + ' 이름 바꾸기') + '" autocomplete="off" spellcheck="false">';
+      return '<div class="roster-row ' + r.kind + (r.on ? '' : ' off') + '" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
+        light +
+        '<div class="avatar" aria-hidden="true">' + esc(String(r.name).charAt(0) || 'A') + '</div>' +
+        '<div class="roster-main">' + nameField + '<div class="roster-meta">' + esc(r.meta) + '</div></div>' +
+        '<div class="roster-tools"><span class="roster-kind ' + r.kind + '">' + r.label + '</span></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function openDrawer() {
+    if (!drawerEl) return;
+    drawerEl.hidden = false;
+    document.body.classList.add('modal-open');
+    var btn = $('#btnMenu');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    if (checkEveryEl) checkEveryEl.value = String(checkEvery());
+    renderCheckPreview();
+    renderDbStatus();
+    renderRoster(true);
+    if (rosterTimer) clearInterval(rosterTimer);
+    /* 열어 둔 동안에도 10분 기준 불빛이 저절로 맞춰지게 */
+    rosterTimer = setInterval(function () { renderRoster(false); }, 30000);
+  }
+  function closeDrawer() {
+    if (!drawerEl || drawerEl.hidden) return;
+    if (document.activeElement && drawerEl.contains(document.activeElement)) {
+      try { document.activeElement.blur(); } catch (e) { }
+    }
+    drawerEl.hidden = true;
+    document.body.classList.remove('modal-open');
+    var btn = $('#btnMenu');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    if (rosterTimer) { clearInterval(rosterTimer); rosterTimer = null; }
+  }
+  function toggleDrawer() {
+    if (!drawerEl) return;
+    if (drawerEl.hidden) openDrawer(); else closeDrawer();
+  }
+
+  function setCheckEvery(v) {
+    var n = parseInt(v, 10);
+    if (!isFinite(n) || CHECK_EVERY_OPTIONS.indexOf(n) < 0) n = 5;
+    settings.checkEvery = n;
+    saveSettings();
+    if (checkEveryEl) checkEveryEl.value = String(n);
+    renderCheckPreview();
+    toast('새 글 확인 주기: ' + checkEveryLabel(n) + ' — 🤖 초대 문구에 넣어 뒀어요');
+  }
+
+  /* 사이드 메뉴에서 이름을 고치면 채팅·헤더·멘션 칩·설정까지 바로 반영 */
+  function renameFromRoster(key, kind, raw) {
+    if (!settings) return;
+    if (!settings.names || typeof settings.names !== 'object') settings.names = {};
+    var nm = String(raw || '').replace(/\s+/g, ' ').trim();
+
+    if (kind === 'ai') {
+      var live = aiById(key);
+      if (!live) return;
+      var before = live.name;
+      var next = (nm || defaultNameFor(live.provider)).slice(0, NAME_MAX);
+      next = uniqueName(next, memberList(), key);
+      live.name = next;
+      settings.names[key] = next;
+      if (draftAis) {
+        draftAis.forEach(function (x) { if (x.id === key) x.name = next; });
+        renderAiCards();
+        renderRoleSummary();
+      }
+      saveSettings();
+      render();
+      renderRoster(true);
+      battleMetaUpdate();
+      if (next !== before) toast('이름을 ‘' + next + '’로 바꿨어요!');
+      return;
+    }
+
+    if (kind === 'ext') {
+      var who = String(key);
+      var cleaned = nm.slice(0, 24);
+      if (!cleaned || cleaned === who) delete settings.names[who];
+      else settings.names[who] = cleaned;
+      saveSettings();
+      render();
+      renderRoster(true);
+      toast('이 비서를 ‘' + nameOf(who) + '’라고 부를게요!');
+    }
+  }
+
+  function toggleAiFromRoster(id) {
+    var a = aiById(id);
+    if (!a) return;
+    a.on = !a.on;
+    saveSettings();
+    render();
+    renderRoster(true);
+    toast(a.name + (a.on ? ' 켰어요 🔵' : ' 껐어요 🔴'));
+  }
+
+  function pullNow() {
+    if (!dbBase()) { toast('공용 공책이 연결되지 않았어요. ⚙️에서 주소를 넣어 주세요.'); return; }
+    pull(false);
+    toast('공용 공책에서 새 글을 확인하고 있어요…');
   }
 
   function welcomeHTML() {
@@ -996,11 +1192,16 @@
   }
 
   function renderDbStatus() {
-    if (!dbStatusEl) return;
-    if (!dbBase()) { dbStatusEl.textContent = ''; dbStatusEl.className = 'db-status'; return; }
-    if (dbState === 'ok') { dbStatusEl.textContent = '✓ 공용 공책에 연결됐어요 (3초마다 새 대화를 확인해요)'; dbStatusEl.className = 'db-status ok'; }
-    else if (dbState === 'bad') { dbStatusEl.textContent = '연결이 안 돼요. 주소와 규칙(rules)을 확인해 주세요.'; dbStatusEl.className = 'db-status bad'; }
-    else { dbStatusEl.textContent = '확인 중…'; dbStatusEl.className = 'db-status'; }
+    var connected = !!dbBase();
+    function apply(el, emptyText) {
+      if (!el) return;
+      if (!connected) { el.textContent = emptyText || ''; el.className = 'db-status'; return; }
+      if (dbState === 'ok') { el.textContent = '✓ 공용 공책에 연결됐어요 (3초마다 새 대화를 확인해요)'; el.className = 'db-status ok'; }
+      else if (dbState === 'bad') { el.textContent = '연결이 안 돼요. 주소와 규칙(rules)을 확인해 주세요.'; el.className = 'db-status bad'; }
+      else { el.textContent = '확인 중…'; el.className = 'db-status'; }
+    }
+    apply(dbStatusEl, '');
+    apply(drawerDbStatusEl, '공용 공책이 연결되지 않았어요. ⚙️에서 연결하면 외부 비서도 여기 보여요.');
   }
 
   /* ---------- 초대 링크 ---------- */
@@ -1034,6 +1235,7 @@
     lines.push('[' + USER_NAME + '님의 비밀 AI 단톡방 초대]');
     lines.push('- 방 이름: ' + settings.roomName);
     lines.push('- 내 호칭: (불릴 이름, 예: 피클2호)');
+    lines.push('- 새 글 확인 주기: ' + checkEveryPhrase(checkEvery()));
     lines.push('- 단톡방 주소: ' + inviteUrl());
     lines.push('- 공용 공책 직접 읽기(GET): ' + base + '/' + crumb);
     lines.push('- 공용 공책 글쓰기(POST): ' + base + '/' + crumb);
@@ -1488,7 +1690,36 @@
     });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && !modal.hidden) closeSettings();
+      else if (e.key === 'Escape' && drawerEl && !drawerEl.hidden) closeDrawer();
     });
+
+    /* ☰ 사이드 메뉴: 열기/닫기 · 불빛으로 AI 켜기/끄기 · 이름 바로 바꾸기 · 확인 주기 */
+    var menuBtn = $('#btnMenu');
+    if (menuBtn) menuBtn.addEventListener('click', toggleDrawer);
+    if (drawerEl) {
+      drawerEl.addEventListener('click', function (e) {
+        if (e.target.closest('[data-drawer-close]')) { closeDrawer(); return; }
+        var lightBtn = e.target.closest('[data-toggle-ai]');
+        if (lightBtn) {
+          e.preventDefault();
+          toggleAiFromRoster(lightBtn.getAttribute('data-toggle-ai'));
+        }
+      });
+    }
+    if (rosterEl) {
+      rosterEl.addEventListener('change', function (e) {
+        var inp = e.target.closest('[data-rename]');
+        if (!inp) return;
+        renameFromRoster(inp.getAttribute('data-rename'), inp.getAttribute('data-kind'), inp.value);
+      });
+      rosterEl.addEventListener('keydown', function (e) {
+        if (!e.target.getAttribute || !e.target.getAttribute('data-rename')) return;
+        if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+      });
+    }
+    if (checkEveryEl) checkEveryEl.addEventListener('change', function () { setCheckEvery(checkEveryEl.value); });
+    var pullBtn = $('#drawerPull');
+    if (pullBtn) pullBtn.addEventListener('click', pullNow);
 
     /* AI 카드: 열쇠 보기 · 켜기/끄기 · 역할 칩 · 삭제 */
     aiCardsEl.addEventListener('click', function (e) {
