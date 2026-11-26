@@ -945,7 +945,17 @@
     if (code === 'EMPTY') return name + '가 오늘은 말이 없네요ㅎㅎ 한 번 더 말 걸어 봐 주세요.';
     var st = err && err.status;
     if (st === 401 || st === 403) return name + '가 열쇠를 거절했어요. 열쇠가 맞는지 ⚙️ 설정에서 확인해 주세요!';
-    if (st === 429) return name + '가 잠깐 숨을 고르고 있어요. 1분 뒤에 다시 말 걸어 주세요!';
+    if (st === 429) {
+      var rTried = (err && isArr(err.rateLimited)) ? err.rateLimited : [];
+      var rBits = [];
+      if (rTried.length) {
+        /* 말풍선이 길어지지 않게 회사 이름(google/ 등)은 빼고 모델 이름만 짧게 보여 줘요 */
+        var rNames = rTried.map(function (m) { return String(m).split('/').pop(); });
+        rBits.push('시도: ' + rNames.slice(0, 3).join(', ') + (rNames.length > 3 ? ' 외' : ''));
+      }
+      return name + '가 잠깐 숨을 고르고 있어요.' + (rBits.length ? ' (' + rBits.join(' · ') + ')' : '') +
+        ' 1분 뒤에 다시 말 걸어 주세요!';
+    }
     if (st === 404) {
       var triedModels = (err && isArr(err.triedModels)) ? err.triedModels : [];
       var rawMsg = errText(err).replace(/\s+/g, ' ').trim();
@@ -1155,7 +1165,9 @@
         가장 알맞은 모델(가볍고 빠른 것 · 최신 것)을 골라 다시 해 봐요.
      2) 목록도 못 받으면 미리 적어 둔 모델 이름들을 차례로 해 봐요.
      3) 이번에 성공한 모델은 창을 닫을 때까지 기억해 둬요. (다음부터는 바로 그 모델로)
-     4) 서버가 500·503으로 잠깐 막히면(과부하 등) 아직 안 해 본 예비 모델로 최대 2번 더 해 봐요. */
+     4) 서버가 500·503으로 잠깐 막히면(과부하 등) 아직 안 해 본 예비 모델로 최대 2번 더 해 봐요.
+     5) '잠깐 숨을 고르고 있어요'(429)가 나면 그 모델은 기억하지 않고 다른 예비 모델로 최대 3번 더 해 봐요.
+        (OpenRouter는 ':free' 모델마다 레이트리밋이 따로라서 옆 무료 모델로 바꾸면 바로 되는 때가 많아요.) */
   var GEMINI_BASE = 'https://generativelanguage.googleapis.com';
   var MODEL_DEFAULT = {
     gemini: 'gemini-2.5-flash',
@@ -1311,13 +1323,23 @@
   /* 500·503에서 예비 모델로 다시 시도하는 최대 횟수 (한 모델이 성공하면 바로 끝) */
   var SERVER_RETRY_MAX = 2;
 
+  /* 429(잠깐 숨 고르기)에서 다른 모델로 다시 시도하는 최대 횟수
+     — OpenRouter는 ':free' 모델마다 레이트리밋이 따로라서 옆 모델로 넘어가면 바로 되는 때가 많아요 */
+  var RATE_LIMIT_RETRY_MAX = 3;
+
   /* 서버 쪽이 잠깐 막힌 건지 (500 · 502 · 503 · 504 …) */
   function isServerTrouble(err) {
     return !!(err && typeof err.status === 'number' && err.status >= 500);
   }
 
+  /* 잠깐 숨 고르라는 건지 (429 Too Many Requests) */
+  function isRateLimit(err) {
+    return !!(err && err.status === 429);
+  }
+
   /* 모델을 차례로 시도: 원래 모델 → (404면) 자동으로 찾은 모델 → 미리 적어 둔 모델
-     → (500·503이면) 아직 안 해 본 예비 모델로 최대 2번 더 */
+     → (500·503이면) 아직 안 해 본 예비 모델로 최대 2번 더
+     → (429면) 다른 예비 모델로 최대 3번 더 */
   function askWithModelFallback(provider, key, attempt, discover) {
     var memoKey = provider + '|' + key;
     var memo = modelMemo[memoKey];
@@ -1327,6 +1349,9 @@
     var lastErr = null;
     var stage = 0;
     var serverRetries = 0;
+    var rateRetries = 0;
+    var rateLimited = []; /* 429였던 모델 이름들 (모두 429면 안내에 짧게 보여 줘요) */
+    var discovered = null; /* 목록 조회로 알아낸 모델들 (한 번 받아 오면 다시 안 받아요) */
 
     if (memo && memo !== defaultModel) pending.push(memo);
     pending.push(defaultModel);
@@ -1334,17 +1359,46 @@
     function finish() {
       var err = lastErr || { status: 404, code: 'HTTP' };
       err.triedModels = tried.slice();
+      if (isRateLimit(err) && rateLimited.length) err.rateLimited = rateLimited.slice();
       err.provider = provider;
       throw err;
     }
 
+    /* 아직 안 해 본 모델만 추려 줄을 세우고 하나 시도해요 (남는 게 없으면 null) */
+    function queueFrom(list) {
+      pending = (list || []).filter(function (m) { return tried.indexOf(m) < 0; });
+      return pending.length ? next() : null;
+    }
+
+    /* 모델 목록 조회는 한 번만 (실패하면 빈 목록으로 굳혀서 다시 안 물어봐요) */
+    function fetchModels() {
+      if (stage === 0) stage = 1; /* advance()가 목록을 또 받아 오지 않게 */
+      return discover(key).then(function (models) {
+        discovered = models || [];
+        return discovered;
+      }, function (err) {
+        discovered = [];
+        throw err;
+      });
+    }
+
     /* 500·503: 모델 목록 조회(404용)는 건너뛰고, 아직 안 해 본 예비 모델부터 바로 넣어요 */
     function retryWithBackup() {
-      if (!pending.length) {
-        pending = (MODEL_FALLBACKS[provider] || []).filter(function (m) { return tried.indexOf(m) < 0; });
-      }
-      if (!pending.length) return finish();
-      return next();
+      if (pending.length) return next();
+      return queueFrom(discovered) || queueFrom(MODEL_FALLBACKS[provider]) || finish();
+    }
+
+    /* 429: 남은 후보 → 목록 조회로 알아낸 다른 모델 → 미리 적어 둔 예비 모델 순서로 넘어가요.
+       같은 모델을 다시 부르면 또 429라서, 이때 고른 모델은 modelMemo에 남기지 않아요. */
+    function retryAfterRateLimit() {
+      if (pending.length) return next();
+      var q = queueFrom(discovered) || queueFrom(MODEL_FALLBACKS[provider]);
+      if (q) return q;
+      if (discovered !== null) return finish();
+      /* 목록을 아직 안 받아 왔으면 한 번 받아 와서 다른 모델(예: 다른 ':free')을 찾아요 */
+      return fetchModels().then(function () {
+        return queueFrom(discovered) || finish();
+      }, function () { return finish(); });
     }
 
     function next() {
@@ -1354,10 +1408,16 @@
       tried.push(model);
       return attempt(model).then(function (text) {
         /* 이름이 바뀌어 404를 피해 찾아낸 모델만 기억해요.
-           잠깐 503이라 넘어간 예비 모델은 기억해 두지 않고, 다음엔 원래 모델부터 다시 시도해요. */
+           잠깐 503이나 429라 넘어간 예비 모델은 기억해 두지 않고, 다음엔 원래 모델부터 다시 시도해요. */
         if (lastErr && isModelMissing(lastErr)) modelMemo[memoKey] = model;
         return text;
       }, function (err) {
+        if (isRateLimit(err)) {
+          lastErr = err;
+          if (rateLimited.indexOf(model) < 0) rateLimited.push(model);
+          if (rateRetries < RATE_LIMIT_RETRY_MAX) { rateRetries++; return retryAfterRateLimit(); }
+          return finish();
+        }
         if (isModelMissing(err)) { lastErr = err; return next(); }
         if (isServerTrouble(err)) {
           lastErr = err;
@@ -1370,16 +1430,13 @@
 
     function advance() {
       if (stage === 0) {
-        stage = 1;
-        return discover(key).then(function (models) {
-          pending = (models || []).filter(function (m) { return tried.indexOf(m) < 0; });
-          return next();
+        return fetchModels().then(function () {
+          return queueFrom(discovered) || advance();
         }, function () { return advance(); });
       }
       if (stage === 1) {
         stage = 2;
-        pending = MODEL_FALLBACKS[provider].filter(function (m) { return tried.indexOf(m) < 0; });
-        return next();
+        return queueFrom(MODEL_FALLBACKS[provider]) || finish();
       }
       return finish();
     }

@@ -1,6 +1,7 @@
 /* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함)
+   v13: '잠깐 숨을 고르고 있어요'(429)가 나도 그 모델은 기억하지 않고 다른 예비 모델(예: 다른 ':free')로 최대 3번 더 시도
    v12: 서버가 500·503으로 막혀도 예비 모델로 최대 2번 더 시도 — 오류 말풍선에 시도한 모델·HTTP 코드·원문 표시 */
-const CACHE = 'aigc-shell-v12';
+const CACHE = 'aigc-shell-v13';
 const ASSETS = [
   './',
   './index.html',
