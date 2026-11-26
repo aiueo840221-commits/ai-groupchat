@@ -122,8 +122,6 @@ a { color: var(--accent); }
 }
 .icon-btn:hover { background: #f6f8fa; }
 .icon-btn:active { transform: scale(.94); }
-/* 비서 초대(user-plus): 🔗·⚙️ 와 같은 선 아이콘 톤으로 맞추기 */
-.icon-btn .icon-svg { width: 20px; height: 20px; display: block; }
 
 .ai-badges { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px 0; }
 .badge {
