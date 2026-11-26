@@ -10,10 +10,11 @@
   });
 
   /* ---------- 기본 정보 ---------- */
-  var PROVIDERS = ['gemini', 'openai', 'claude'];
+  var PROVIDERS = ['gemini', 'openai', 'claude', 'groq', 'openrouter'];
   var PROVIDER_INFO = {
     gemini: {
       label: 'Google Gemini',
+      defaultName: '제미나이',
       keyUrl: 'https://aistudio.google.com/apikey',
       keySite: 'Google AI Studio',
       colors: [
@@ -24,6 +25,7 @@
     },
     openai: {
       label: 'OpenAI ChatGPT',
+      defaultName: '지피티',
       keyUrl: 'https://platform.openai.com/api-keys',
       keySite: 'OpenAI',
       colors: [
@@ -34,12 +36,36 @@
     },
     claude: {
       label: 'Anthropic Claude',
+      defaultName: '클로드',
       keyUrl: 'https://console.anthropic.com/settings/keys',
       keySite: 'Anthropic',
       colors: [
         { c1: '#D97757', c2: '#B0573A' },
         { c1: '#E8590C', c2: '#C2410C' },
         { c1: '#F08C00', c2: '#B35C00' }
+      ]
+    },
+    /* Groq·OpenRouter도 OpenAI와 같은 모양으로 물어보는 곳이에요 (열쇠만 다름) */
+    groq: {
+      label: 'Groq (무료/초고속)',
+      defaultName: '그록',
+      keyUrl: 'https://console.groq.com/keys',
+      keySite: 'Groq Console',
+      colors: [
+        { c1: '#F55036', c2: '#C2410C' },
+        { c1: '#FF7A45', c2: '#D9480F' },
+        { c1: '#F76707', c2: '#B34700' }
+      ]
+    },
+    openrouter: {
+      label: 'OpenRouter (무료 모델)',
+      defaultName: '오픈이',
+      keyUrl: 'https://openrouter.ai/keys',
+      keySite: 'OpenRouter',
+      colors: [
+        { c1: '#6D5AE6', c2: '#4C2FA8' },
+        { c1: '#4C6EF5', c2: '#2B3FA8' },
+        { c1: '#7B5CD6', c2: '#3B2A7A' }
       ]
     }
   };
@@ -222,6 +248,8 @@
     return set[i % set.length];
   }
   function defaultNameFor(provider) {
+    var info = PROVIDER_INFO[provider];
+    if (info && info.defaultName) return info.defaultName;
     for (var i = 0; i < MEMBER_DEFAULTS.length; i++) {
       if (MEMBER_DEFAULTS[i].provider === provider) return MEMBER_DEFAULTS[i].name;
     }
@@ -1129,11 +1157,30 @@
      3) 이번에 성공한 모델은 창을 닫을 때까지 기억해 둬요. (다음부터는 바로 그 모델로)
      4) 서버가 500·503으로 잠깐 막히면(과부하 등) 아직 안 해 본 예비 모델로 최대 2번 더 해 봐요. */
   var GEMINI_BASE = 'https://generativelanguage.googleapis.com';
-  var MODEL_DEFAULT = { gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini', claude: 'claude-3-5-haiku-latest' };
+  var MODEL_DEFAULT = {
+    gemini: 'gemini-2.5-flash',
+    openai: 'gpt-4o-mini',
+    claude: 'claude-3-5-haiku-latest',
+    groq: 'llama-3.3-70b-versatile',
+    openrouter: 'meta-llama/llama-3.3-70b-instruct:free'
+  };
   var MODEL_FALLBACKS = {
     gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'],
     openai: ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4.1-nano'],
-    claude: ['claude-3-5-haiku-latest', 'claude-haiku-4-5-20251001', 'claude-3-7-sonnet-latest', 'claude-sonnet-4-5-20250929']
+    claude: ['claude-3-5-haiku-latest', 'claude-haiku-4-5-20251001', 'claude-3-7-sonnet-latest', 'claude-sonnet-4-5-20250929'],
+    groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+    openrouter: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-3-27b-it:free', 'qwen/qwen3-next-80b-a3b-instruct:free']
+  };
+  /* 목록을 받아 왔을 때 앞에 놓을 모델 (무료로 쓰기 좋은 것부터) */
+  var MODEL_PREFERRED = {
+    groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+    openrouter: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-3-27b-it:free', 'qwen/qwen3-next-80b-a3b-instruct:free']
+  };
+  /* OpenAI와 같은 모양(chat/completions)으로 물어보는 곳들 */
+  var OPENAI_COMPAT = {
+    openai: { url: 'https://api.openai.com/v1/chat/completions', models: 'https://api.openai.com/v1/models' },
+    groq: { url: 'https://api.groq.com/openai/v1/chat/completions', models: 'https://api.groq.com/openai/v1/models' },
+    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', models: 'https://openrouter.ai/api/v1/models' }
   };
   var modelMemo = {}; /* 'provider|열쇠' → 잘 동작한 모델 이름 (창을 닫으면 사라져요) */
 
@@ -1184,6 +1231,13 @@
     });
   }
 
+  /* 목록 앞쪽에 쓰고 싶은 모델을 먼저 놓아요 (없는 이름은 그냥 건너뜀) */
+  function preferModel(list, first) {
+    var out = [];
+    (first || []).forEach(function (m) { if (list.indexOf(m) > -1 && out.indexOf(m) < 0) out.push(m); });
+    return out.concat(list.filter(function (m) { return out.indexOf(m) < 0; }));
+  }
+
   /* Gemini: 이 열쇠로 글쓰기(generateContent)가 되는 flash 계열 모델 이름들 */
   function geminiModelNames(key) {
     var acc = [];
@@ -1209,17 +1263,32 @@
     });
   }
 
-  /* OpenAI: 이 열쇠로 쓸 수 있는 채팅 모델 이름들 */
-  function openaiModelNames(key) {
-    return callJson('https://api.openai.com/v1/models', {
+  /* OpenAI·Groq·OpenRouter: 이 열쇠로 쓸 수 있는 채팅 모델 이름들 */
+  function openaiLikeModelNames(provider, key) {
+    var ep = OPENAI_COMPAT[provider] || OPENAI_COMPAT.openai;
+    return callJson(ep.models, {
       method: 'GET', headers: { 'Authorization': 'Bearer ' + key }
     }).then(function (data) {
       var ids = ((data && data.data) || []).map(function (m) { return String((m && m.id) || ''); });
-      return rankModels(ids.filter(function (id) {
-        return /^gpt-/.test(id) && !/(audio|realtime|tts|transcribe|image|search|moderation|embedding|codex|instruct|dall|sora)/.test(id);
-      }));
+      var list;
+      if (provider === 'groq') {
+        /* 말을 못 하는 모델(음성·가드레일 등)은 빼요 */
+        list = ids.filter(function (id) { return !/(whisper|tts|guard|embed|moderation|rerank|playai)/i.test(id); });
+      } else if (provider === 'openrouter') {
+        /* 무료 모델만 써요 (:free 로 끝나는 이름) */
+        list = ids.filter(function (id) { return /:free$/.test(id); });
+      } else {
+        list = ids.filter(function (id) {
+          return /^gpt-/.test(id) && !/(audio|realtime|tts|transcribe|image|search|moderation|embedding|codex|instruct|dall|sora)/.test(id);
+        });
+      }
+      return preferModel(rankModels(list), MODEL_PREFERRED[provider] || []);
     });
   }
+
+  function openaiModelNames(key) { return openaiLikeModelNames('openai', key); }
+  function groqModelNames(key) { return openaiLikeModelNames('groq', key); }
+  function openrouterModelNames(key) { return openaiLikeModelNames('openrouter', key); }
 
   /* Claude: 이 열쇠로 쓸 수 있는 채팅 모델 이름들 */
   function claudeModelNames(key) {
@@ -1348,17 +1417,22 @@
     }, geminiModelNames);
   }
 
-  function askOpenai(key, sys, hist) {
+  /* OpenAI와 같은 모양인 곳(OpenAI · Groq · OpenRouter)에 물어봐요 */
+  function askOpenaiLike(provider, key, sys, hist) {
     var msgs = [{ role: 'system', content: sys }].concat(hist.map(function (h) {
       return { role: h.role, content: h.text };
     }));
-    return askWithModelFallback('openai', key, function (model) {
+    var ep = OPENAI_COMPAT[provider] || OPENAI_COMPAT.openai;
+    var discover = provider === 'groq' ? groqModelNames
+      : provider === 'openrouter' ? openrouterModelNames
+      : openaiModelNames;
+    return askWithModelFallback(provider, key, function (model) {
       /* 예전 모델은 max_tokens·temperature, 새 모델은 max_completion_tokens 를 써요 */
       function post(oldStyle) {
         var body = { model: model, messages: msgs };
         if (oldStyle) { body.max_tokens = 600; body.temperature = 0.9; }
         else body.max_completion_tokens = 600;
-        return callJson('https://api.openai.com/v1/chat/completions', {
+        return callJson(ep.url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
           body: JSON.stringify(body)
@@ -1375,8 +1449,10 @@
         }
         throw err;
       });
-    }, openaiModelNames);
+    }, discover);
   }
+
+  function askOpenai(key, sys, hist) { return askOpenaiLike('openai', key, sys, hist); }
 
   function askClaude(key, sys, hist) {
     var msgs = hist.map(function (h) { return { role: h.role, content: h.text }; });
@@ -1408,7 +1484,7 @@
     var hist = buildHistory(id);
     if (opts && opts.battle) hist.push({ role: 'user', text: battlePromptFor(id) });
 
-    if (provider === 'openai') return askOpenai(key, sys, hist);
+    if (OPENAI_COMPAT[provider]) return askOpenaiLike(provider, key, sys, hist);
     if (provider === 'claude') return askClaude(key, sys, hist);
     return askGemini(key, sys, hist);
   }
