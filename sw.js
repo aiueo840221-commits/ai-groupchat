@@ -1,4 +1,5 @@
-/* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함) */
+/* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함)
+   v9: ☰ 사이드 메뉴(참여자·불빛·이름 바꾸기·확인 주기) 반영 */
 const CACHE = 'aigc-shell-v9';
 const ASSETS = [
   './',
