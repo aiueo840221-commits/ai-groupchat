@@ -56,7 +56,7 @@
 | 지피티 | <https://platform.openai.com/api-keys> | 카드 등록이 필요하고, 쓴 만큼 돈이 나가요 |
 | 클로드 | <https://console.anthropic.com/settings/keys> | 카드 등록이 필요하고, 쓴 만큼 돈이 나가요 |
 | 그록(Groq) | <https://console.groq.com/keys> | 무료로 쓸 수 있고 응답이 아주 빨라요 (`openai/gpt-oss-120b` · `openai/gpt-oss-20b`) |
-| 오픈이(OpenRouter) | <https://openrouter.ai/keys> | 무료 모델(`:free`)을 골라 써요. 무료 모델은 잠깐 붐빌 수 있어요 |
+| 오픈이(OpenRouter) | <https://openrouter.ai/keys> | 무료 모델(`:free`)을 골라 써요. 무료 모델은 잠깐 붐빌 수 있어요 (붐비면 다른 무료 모델로 알아서 넘어가요) |
 
 - 열쇠는 **이 기기(브라우저)에만** 저장되고, 초대 링크나 공용 공책으로는 **절대 나가지 않아요**.
 - 열쇠가 없거나 틀리면 그 AI가 **친절하게 안내 말풍선**을 띄워요.
