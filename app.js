@@ -227,6 +227,11 @@
     var ai = aiById(who);
     if (ai) return ai.name;
     if (settings && settings.names && typeof settings.names === 'object' && settings.names[who]) return String(settings.names[who]);
+    /* 다른 비서(아이·피클2호 등)가 공용 공책에 직접 쓴 글: 이름을 그대로 보여 줘요 */
+    if (typeof who === 'string') {
+      var raw = who.trim();
+      if (raw) return raw;
+    }
     return 'AI';
   }
   function roleOf(id) {
@@ -548,7 +553,8 @@
     var ai = aiById(m.who);
     var col = colorsOf(ai);
     var name = nameOf(m.who);
-    var role = roleOf(m.who);
+    /* 내 비서가 아니면 글에 함께 실려 온 roleTag(담당 역할)를 그대로 보여 줘요 */
+    var role = roleOf(m.who) || (m.roleTag ? String(m.roleTag).trim() : '');
     return '<div class="msg ai" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
       '<div class="avatar">' + esc(String(name).charAt(0) || 'A') + '</div>' +
       '<div class="msg-body">' +
@@ -951,7 +957,10 @@
         var s = sig({ who: x.who, ts: x.ts, text: x.text });
         if (known[s]) return;
         known[s] = true;
-        messages.push({ who: x.who, text: x.text, ts: x.ts });
+        var got = { who: x.who, text: x.text, ts: x.ts };
+        var tag = x.roleTag || x.role;
+        if (tag && typeof tag === 'string' && tag.trim()) got.roleTag = tag.trim();
+        messages.push(got);
         added++;
       });
       if (added) {
