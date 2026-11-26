@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>초간단 AI 단톡방</title>
+<meta name="description" content="열쇠가 있는 사람만 들어오는 비밀 AI 단톡방. 원하는 AI만 골라서 대화하고, 방 주소 하나로 초대해요.">
+<meta name="theme-color" content="#FEE500">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="AI단톡방">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 잠금 화면: 열쇠(링크 키)가 없으면 이것만 보여요 -->
+<div id="lock" class="lock" hidden>
+  <div class="lock-card">
+    <div class="lock-emoji" aria-hidden="true">🔒</div>
+    <h1>입장 키가 필요해요</h1>
+    <p class="lock-desc">이 단톡방은 <b>비밀 방</b>이에요.<br>초대 링크에 들어 있는 <b>열쇠</b>가 있어야 들어갈 수 있어요.</p>
+
+    <button id="createRoom" class="primary-btn big" type="button">새 비밀 방 만들기</button>
+
+    <div class="or"><span>또는</span></div>
+
+    <label class="field">
+      <span class="field-label">초대 링크를 붙여넣어 주세요</span>
+      <textarea id="joinInput" rows="3" placeholder="https://.../?room=abc123&amp;k=..." autocomplete="off" spellcheck="false"></textarea>
+    </label>
+    <button id="joinBtn" class="ghost-btn wide" type="button">이 링크로 들어가기</button>
+    <div id="lockMsg" class="lock-msg" role="status" aria-live="polite"></div>
+
+    <p class="lock-foot">열쇠가 든 링크를 가진 사람만 이 방을 열 수 있어요.<br>링크를 잃어버리면 이 방의 대화는 다시 못 열어요.</p>
+  </div>
+</div>
+
+<!-- 채팅 화면: 열쇠가 확인된 다음에만 열려요 -->
+<div class="app" id="app" hidden>
+
+  <header class="topbar">
+    <div class="topbar-main">
+      <input id="roomName" class="room-name" value="우리들 단톡방" maxlength="24" aria-label="방 이름 (눌러서 바꿀 수 있어요)" title="눌러서 방 이름을 바꿀 수 있어요">
+      <div class="topbar-btns">
+        <button id="btnInvite" class="icon-btn" type="button" aria-label="초대 링크 복사" title="초대 링크 복사">🔗</button>
+        <button id="btnSettings" class="icon-btn" type="button" aria-label="AI · 방 설정" title="AI · 방 설정">⚙️</button>
+      </div>
+    </div>
+    <div class="ai-badges" id="aiBadges"></div>
+  </header>
+
+  <main id="chat" class="chat" aria-live="polite" aria-label="대화 내용"></main>
+
+  <div id="chips" class="chips" aria-label="빠른 멘션"></div>
+
+  <footer class="composer">
+    <textarea id="input" rows="1" placeholder="메시지를 입력하세요" aria-label="메시지 입력" enterkeyhint="send"></textarea>
+    <button id="sendBtn" class="send-btn" type="button">전송</button>
+  </footer>
+
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-back" data-close></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head">
+      <h2 id="sheetTitle">AI · 방 설정</h2>
+      <button class="close-btn" type="button" data-close aria-label="닫기">✕</button>
+    </div>
+
+    <div class="sheet-body">
+      <label class="field">
+        <span class="field-label">방 이름</span>
+        <input id="setRoomName" maxlength="24" placeholder="우리들 단톡방">
+      </label>
+
+      <div class="help-card">
+        🔒 AI 열쇠(API 키)는 <b>이 기기에만</b> 저장돼요. 초대 링크를 받은 사람에게는 절대 보이지 않아요.<br>
+        🔗 초대 링크에는 이 방의 <b>비밀 열쇠</b>가 들어 있어요. 링크를 받은 사람만 들어올 수 있으니 아무 데나 올리지 마세요.
+      </div>
+
+      <h3 class="section-title">역할 분담 한눈에 보기</h3>
+      <div id="roleSummary" class="role-summary"></div>
+
+      <h3 class="section-title">AI 친구들</h3>
+      <p class="hint">쓰고 싶은 AI만 켜 두세요. 켜 둔 AI들이 <b>맡은 역할대로</b> 차례로 대답해요.</p>
+      <div id="aiCards"></div>
+
+      <h3 class="section-title">공용 공책 <span class="tag-opt">선택</span></h3>
+      <p class="hint">폰이랑 PC에서 <b>같은 대화</b>를 보려면 여기에 공용 공책 주소를 넣어 주세요. 비워 두면 이 기기에만 저장돼요.</p>
+      <input id="setDbUrl" class="db-input" type="url" inputmode="url" placeholder="https://내공용공책.firebasedatabase.app" autocomplete="off" spellcheck="false">
+      <div id="dbStatus" class="db-status"></div>
+
+      <details class="howto">
+        <summary>공용 공책은 어떻게 만들어요?</summary>
+        <ol>
+          <li><a href="https://console.firebase.google.com/" target="_blank" rel="noopener">Firebase</a>에 구글 아이디로 로그인해요.</li>
+          <li>새 프로젝트를 하나 만들고, 왼쪽 메뉴에서 <b>Realtime Database</b>를 눌러 <b>만들기</b>를 골라요.</li>
+          <li>위에 나오는 주소(https://....firebasedatabase.app 또는 ....firebaseio.com)를 복사해요.</li>
+          <li>그 주소 끝에 <b>/rooms.json</b>을 붙여 열고, 규칙(rules)을 아래처럼 바꿔 저장해요.
+            <pre>{
+  "rules": {
+    "rooms": {
+      "$room": {
+        "messages": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    }
+  }
+}</pre>
+          </li>
+          <li>주소를 위 칸에 붙여 넣고 저장하면 끝! 이제 초대 링크 하나로 대화가 같이 보여요.</li>
+        </ol>
+        <p class="hint">※ 공용 공책에 넣은 대화는 링크를 아는 사람이면 볼 수 있으니, 비밀 이야기는 넣지 마세요. 대화는 이 방의 비밀 열쇠로 잠근 자리에만 저장돼요.</p>
+      </details>
+
+      <div class="sheet-actions">
+        <button id="saveBtn" class="primary-btn" type="button">저장</button>
+        <button id="clearChat" class="text-btn danger" type="button">이 기기에서 대화 지우기</button>
+      </div>
+      <p class="foot-note">초간단 AI 단톡방 · 열쇠 없이도 화면과 초대 링크는 그대로 쓸 수 있어요.</p>
+    </div>
+  </section>
+</div>
+
+<noscript><p style="padding:20px;text-align:center">이 단톡방을 쓰려면 브라우저에서 자바스크립트를 켜 주세요.</p></noscript>
+
+<script src="app.js"></script>
+</body>
+</html>

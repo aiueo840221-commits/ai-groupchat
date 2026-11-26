@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="초간단 AI 단톡방">
+  <rect width="512" height="512" rx="112" fill="#FEE500"/>
+  <rect x="69" y="90" width="318" height="225" rx="69" fill="#FFFFFF"/>
+  <path d="M110 307h77l-67 69z" fill="#FFFFFF"/>
+  <circle cx="146" cy="202" r="25" fill="#191919"/>
+  <circle cx="228" cy="202" r="25" fill="#191919"/>
+  <circle cx="310" cy="202" r="25" fill="#191919"/>
+  <rect x="243" y="279" width="205" height="128" rx="54" fill="#5B3FD9"/>
+  <path d="M389 401h46l-18 54z" fill="#5B3FD9"/>
+  <circle cx="294" cy="343" r="15" fill="#FFFFFF"/>
+  <circle cx="345" cy="343" r="15" fill="#FFFFFF"/>
+  <circle cx="396" cy="343" r="15" fill="#FFFFFF"/>
+</svg>
