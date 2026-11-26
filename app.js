@@ -948,23 +948,30 @@
       renderDbStatus();
       if (!data || typeof data !== 'object') return;
       var known = {};
-      messages.forEach(function (m) { known[sig(m)] = true; });
+      messages.forEach(function (m) { known[sig(m)] = m; });
       var added = 0;
+      var tagged = 0;
       Object.keys(data).forEach(function (key) {
         var x = data[key];
         if (!x || typeof x.text !== 'string' || !x.who || typeof x.ts !== 'number') return;
         if (x.ts <= (settings.clearedAt || 0)) return;
         var s = sig({ who: x.who, ts: x.ts, text: x.text });
-        if (known[s]) return;
-        known[s] = true;
+        var tag = (x.roleTag || x.role);
+        tag = (tag && typeof tag === 'string' && tag.trim()) ? tag.trim() : '';
+        var prev = known[s];
+        if (prev) {
+          /* 예전에 받아 둔 글에 담당 역할이 없으면 지금이라도 채워 넣어요 */
+          if (tag && prev.roleTag !== tag) { prev.roleTag = tag; tagged++; }
+          return;
+        }
         var got = { who: x.who, text: x.text, ts: x.ts };
-        var tag = x.roleTag || x.role;
-        if (tag && typeof tag === 'string' && tag.trim()) got.roleTag = tag.trim();
+        if (tag) got.roleTag = tag;
+        known[s] = got;
         messages.push(got);
         added++;
       });
-      if (added) {
-        messages.sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
+      if (added || tagged) {
+        if (added) messages.sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
         saveMessages();
         render();
       }
