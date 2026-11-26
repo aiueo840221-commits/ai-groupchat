@@ -929,7 +929,16 @@
         (bits.length ? ' (' + bits.join(' / ') + ')' : '') +
         ' 계속 그러면 ⚙️ 설정에서 열쇠를 다시 확인해 주세요.';
     }
-    if (st >= 500) return name + ' 쪽에 잠깐 문제가 생겼어요. 조금 뒤에 다시 해 봐 주세요.';
+    if (st >= 500) {
+      var sTried = (err && isArr(err.triedModels)) ? err.triedModels : [];
+      var sRaw = errText(err).replace(/\s+/g, ' ').trim();
+      if (sRaw.length > 80) sRaw = sRaw.slice(0, 80) + '…';
+      var sBits = [];
+      if (sTried.length) sBits.push('시도: ' + sTried.slice(0, 3).join(', ') + (sTried.length > 3 ? ' 외' : ''));
+      sBits.push('HTTP ' + st);
+      if (sRaw) sBits.push(sRaw);
+      return name + ' 쪽에 잠깐 문제가 생겼어요. 조금 뒤에 다시 해 봐 주세요. (' + sBits.join(' · ') + ')';
+    }
     var detail = '';
     try { detail = String((err.data && err.data.error && err.data.error.message) || '').toLowerCase(); } catch (e) { }
     if (st === 400 && (detail.indexOf('api key') > -1 || detail.indexOf('api_key') > -1 || detail.indexOf('invalid_argument') > -1)) {
@@ -1117,7 +1126,8 @@
      1) 원래 쓰던 모델로 먼저 해 보고, 404면 열쇠로 쓸 수 있는 모델 목록을 받아 와서
         가장 알맞은 모델(가볍고 빠른 것 · 최신 것)을 골라 다시 해 봐요.
      2) 목록도 못 받으면 미리 적어 둔 모델 이름들을 차례로 해 봐요.
-     3) 이번에 성공한 모델은 창을 닫을 때까지 기억해 둬요. (다음부터는 바로 그 모델로) */
+     3) 이번에 성공한 모델은 창을 닫을 때까지 기억해 둬요. (다음부터는 바로 그 모델로)
+     4) 서버가 500·503으로 잠깐 막히면(과부하 등) 아직 안 해 본 예비 모델로 최대 2번 더 해 봐요. */
   var GEMINI_BASE = 'https://generativelanguage.googleapis.com';
   var MODEL_DEFAULT = { gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini', claude: 'claude-3-5-haiku-latest' };
   var MODEL_FALLBACKS = {
@@ -1226,7 +1236,16 @@
     });
   }
 
-  /* 모델을 차례로 시도: 원래 모델 → (404면) 자동으로 찾은 모델 → 미리 적어 둔 모델 */
+  /* 500·503에서 예비 모델로 다시 시도하는 최대 횟수 (한 모델이 성공하면 바로 끝) */
+  var SERVER_RETRY_MAX = 2;
+
+  /* 서버 쪽이 잠깐 막힌 건지 (500 · 502 · 503 · 504 …) */
+  function isServerTrouble(err) {
+    return !!(err && typeof err.status === 'number' && err.status >= 500);
+  }
+
+  /* 모델을 차례로 시도: 원래 모델 → (404면) 자동으로 찾은 모델 → 미리 적어 둔 모델
+     → (500·503이면) 아직 안 해 본 예비 모델로 최대 2번 더 */
   function askWithModelFallback(provider, key, attempt, discover) {
     var memoKey = provider + '|' + key;
     var memo = modelMemo[memoKey];
@@ -1235,6 +1254,7 @@
     var tried = [];
     var lastErr = null;
     var stage = 0;
+    var serverRetries = 0;
 
     if (memo && memo !== defaultModel) pending.push(memo);
     pending.push(defaultModel);
@@ -1246,16 +1266,32 @@
       throw err;
     }
 
+    /* 500·503: 모델 목록 조회(404용)는 건너뛰고, 아직 안 해 본 예비 모델부터 바로 넣어요 */
+    function retryWithBackup() {
+      if (!pending.length) {
+        pending = (MODEL_FALLBACKS[provider] || []).filter(function (m) { return tried.indexOf(m) < 0; });
+      }
+      if (!pending.length) return finish();
+      return next();
+    }
+
     function next() {
       if (!pending.length) return advance();
       var model = pending.shift();
       if (tried.indexOf(model) > -1) return next();
       tried.push(model);
       return attempt(model).then(function (text) {
-        modelMemo[memoKey] = model;
+        /* 이름이 바뀌어 404를 피해 찾아낸 모델만 기억해요.
+           잠깐 503이라 넘어간 예비 모델은 기억해 두지 않고, 다음엔 원래 모델부터 다시 시도해요. */
+        if (lastErr && isModelMissing(lastErr)) modelMemo[memoKey] = model;
         return text;
       }, function (err) {
         if (isModelMissing(err)) { lastErr = err; return next(); }
+        if (isServerTrouble(err)) {
+          lastErr = err;
+          if (serverRetries < SERVER_RETRY_MAX) { serverRetries++; return retryWithBackup(); }
+          return finish();
+        }
         throw err;
       });
     }

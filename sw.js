@@ -1,6 +1,6 @@
 /* 초간단 AI 단톡방 — service worker (앱 껍데기만 저장, 대화·열쇠는 저장 안 함)
-   v11: 모델 이름이 바뀌어 404가 나도 쓸 수 있는 모델을 스스로 찾아 다시 시도 */
-const CACHE = 'aigc-shell-v11';
+   v12: 서버가 500·503으로 막혀도 예비 모델로 최대 2번 더 시도 — 오류 말풍선에 시도한 모델·HTTP 코드·원문 표시 */
+const CACHE = 'aigc-shell-v12';
 const ASSETS = [
   './',
   './index.html',
