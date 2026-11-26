@@ -530,6 +530,11 @@
     if (!el) return;
     el.innerHTML = '🤖 초대 문구에 이렇게 들어가요: <b>' + esc(checkEveryPhrase(checkEvery())) + '</b>';
   }
+  /* 실제 🤖 초대 문구를 그대로 보여 줘서 주기가 들어갔는지 눈으로 확인 */
+  function renderInvitePreview() {
+    var ta = $('#invitePreviewText');
+    if (ta) ta.value = aiInviteText();
+  }
 
   function relTime(ts) {
     var diff = Math.max(0, Date.now() - (ts || 0));
@@ -615,6 +620,7 @@
     if (btn) btn.setAttribute('aria-expanded', 'true');
     if (checkEveryEl) checkEveryEl.value = String(checkEvery());
     renderCheckPreview();
+    renderInvitePreview();
     renderDbStatus();
     renderRoster(true);
     if (rosterTimer) clearInterval(rosterTimer);
@@ -644,6 +650,7 @@
     saveSettings();
     if (checkEveryEl) checkEveryEl.value = String(n);
     renderCheckPreview();
+    renderInvitePreview();
     toast('새 글 확인 주기: ' + checkEveryLabel(n) + ' — 🤖 초대 문구에 넣어 뒀어요');
   }
 
