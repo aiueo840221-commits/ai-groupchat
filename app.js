@@ -1084,6 +1084,8 @@
     setBattleBusy(rankBusy);
     var panel = $('#addAiPanel');
     if (panel) panel.hidden = true;
+    var sheetBody = $('.sheet-body');
+    if (sheetBody) sheetBody.scrollTop = 0;
     modal.hidden = false;
     document.body.classList.add('modal-open');
   }
