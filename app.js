@@ -1537,6 +1537,12 @@
   }
 
   /* ---------- AI 추가 / 삭제 (설정 창 안에서) ---------- */
+  /* ＋ AI 친구 추가 — 이름 칸에 보여 줄 예시 (이미 있는 같은 종류 수에 맞춰 번호) */
+  function addNameExample(provider, list) {
+    var n = (list || []).filter(function (a) { return a.provider === provider; }).length;
+    return '예: ' + defaultNameFor(provider) + (n ? String(n + 1) : '') + ', 유튜브1호';
+  }
+
   function openAddPanel() {
     if (!draftAis) return;
     readCards();
@@ -1545,7 +1551,7 @@
     var nameInput = $('#newAiName');
     nameInput.value = '';
     $('#newAiRole').value = '';
-    nameInput.placeholder = '예: ' + defaultNameFor(provider) + '2, 유튜브1호';
+    nameInput.placeholder = addNameExample(provider, draftAis);
     $('#addAiPanel').hidden = false;
     try { nameInput.focus(); } catch (e) { }
   }
@@ -1877,7 +1883,7 @@
     var providerSel = $('#newAiProvider');
     if (providerSel) {
       providerSel.addEventListener('change', function () {
-        $('#newAiName').placeholder = '예: ' + defaultNameFor(providerSel.value) + '2, 유튜브1호';
+        $('#newAiName').placeholder = addNameExample(providerSel.value, draftAis);
       });
     }
     var newName = $('#newAiName');
