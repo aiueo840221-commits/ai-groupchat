@@ -575,8 +575,8 @@ a { color: var(--accent); }
   vertical-align: 1px;
 }
 .tier-tag .tier-ico { font-size: 10px; line-height: 1; }
-.tier-tag.sm { font-size: 9.5px; padding: 1px 6px 1px 4px; }
-.tier-tag.sm .tier-ico { font-size: 9px; }
+.tier-tag.sm { font-size: 10px; padding: 1px 7px 1px 5px; }
+.tier-tag.sm .tier-ico { font-size: 9.5px; }
 .tier-tag.card { font-size: 12px; padding: 3px 10px 3px 7px; }
 .tier-tag.card .tier-ico { font-size: 12px; }
 

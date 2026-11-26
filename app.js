@@ -45,7 +45,7 @@
   };
   /* 롤 티어 직급 — 낮은 순서부터 높은 순서 (말풍선·배지 색도 여기서 나와요). */
   var TIERS = [
-    { key: 'iron', name: '아이언', icon: '⚙️', c1: '#929ba6', c2: '#5b6570', ink: '#ffffff' },
+    { key: 'iron', name: '아이언', icon: '⚙️', c1: '#818c99', c2: '#4e5865', ink: '#ffffff' },
     { key: 'bronze', name: '브론즈', icon: '🥉', c1: '#c08457', c2: '#8a5626', ink: '#ffffff' },
     { key: 'silver', name: '실버', icon: '🥈', c1: '#b6c3d1', c2: '#7b8a9c', ink: '#2a3542' },
     { key: 'gold', name: '골드', icon: '🥇', c1: '#f6c445', c2: '#c98b00', ink: '#4a3300' },
@@ -700,6 +700,11 @@
     return '평가 대상: ' + names + ' · ' + when;
   }
 
+  function battleMetaUpdate() {
+    var meta = $('#battleMeta');
+    if (meta && settings) meta.textContent = battleMetaText();
+  }
+
   function setBattleBusy(busy) {
     rankBusy = busy;
     var chipBtn = $('#btnBattle');
@@ -1191,6 +1196,7 @@
       live.tier = target.tier;
       saveSettings();
     }
+    battleMetaUpdate();
     var body = $('.sheet-body');
     var sc = body ? body.scrollTop : 0;
     renderAiCards();
@@ -1208,7 +1214,7 @@
     for (var i = 0; i < draftAis.length; i++) if (draftAis[i].id === id) draft = draftAis[i];
     if (!draft) return;
     var live = aiById(id);
-    var before = draft.name;
+    var before = live ? live.name : draft.name;
     if (!nm) nm = defaultNameFor(draft.provider);
     nm = uniqueName(nm, draftAis, id);
     draft.name = nm;
@@ -1218,6 +1224,10 @@
       if (input) input.value = nm;
       var av = card.querySelector('.avatar');
       if (av) av.textContent = String(nm).charAt(0) || 'A';
+      var chk = card.querySelector('[data-f="on"]');
+      if (chk) chk.setAttribute('aria-label', nm + ' 켜기');
+      var delBtn = card.querySelector('[data-del]');
+      if (delBtn) delBtn.setAttribute('aria-label', nm + ' 지우기');
     }
     if (live) {
       live.name = nm;
@@ -1228,6 +1238,7 @@
     readCards();
     renderRoleSummary();
     render();
+    battleMetaUpdate();
     if (nm !== before) toast('이름을 ‘' + nm + '’로 바꿨어요!');
   }
 
