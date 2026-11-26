@@ -12,7 +12,9 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  /* cache: 'reload' — 브라우저 임시 저장소에 남은 옛 파일이 아니라 서버의 최신 파일을 받아 둬요 */
+  const fresh = ASSETS.map((u) => new Request(u, { cache: 'reload' }));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(fresh)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
