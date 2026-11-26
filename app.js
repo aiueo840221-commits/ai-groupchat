@@ -1161,20 +1161,23 @@
     gemini: 'gemini-2.5-flash',
     openai: 'gpt-4o-mini',
     claude: 'claude-3-5-haiku-latest',
-    groq: 'llama-3.3-70b-versatile',
-    openrouter: 'meta-llama/llama-3.3-70b-instruct:free'
+    groq: 'openai/gpt-oss-120b',
+    openrouter: 'google/gemma-4-31b-it:free'
   };
   var MODEL_FALLBACKS = {
     gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'],
     openai: ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4.1-nano'],
     claude: ['claude-3-5-haiku-latest', 'claude-haiku-4-5-20251001', 'claude-3-7-sonnet-latest', 'claude-sonnet-4-5-20250929'],
-    groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
-    openrouter: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-3-27b-it:free', 'qwen/qwen3-next-80b-a3b-instruct:free']
+    /* Groq·OpenRouter 기본 모델 (2026-11 기준 실제로 열려 있는 이름)
+       - Groq: llama-3.3-70b-versatile·llama-3.1-8b-instant는 2026-08-16에 서비스 종료 → gpt-oss로 대체
+       - OpenRouter: ':free' 무료 모델만 사용 (이름이 바뀌면 목록에서 자동으로 찾아요) */
+    groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    openrouter: ['google/gemma-4-31b-it:free', 'nvidia/nemotron-3.5-lightning:free', 'inclusionai/ling-3.2-flash:free']
   };
   /* 목록을 받아 왔을 때 앞에 놓을 모델 (무료로 쓰기 좋은 것부터) */
   var MODEL_PREFERRED = {
-    groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
-    openrouter: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-3-27b-it:free', 'qwen/qwen3-next-80b-a3b-instruct:free']
+    groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    openrouter: ['google/gemma-4-31b-it:free', 'nvidia/nemotron-3.5-lightning:free', 'inclusionai/ling-3.2-flash:free']
   };
   /* OpenAI와 같은 모양(chat/completions)으로 물어보는 곳들 */
   var OPENAI_COMPAT = {
@@ -1273,7 +1276,7 @@
       var list;
       if (provider === 'groq') {
         /* 말을 못 하는 모델(음성·가드레일 등)은 빼요 */
-        list = ids.filter(function (id) { return !/(whisper|tts|guard|embed|moderation|rerank|playai)/i.test(id); });
+        list = ids.filter(function (id) { return !/(whisper|tts|orpheus|canopy|guard|embed|moderation|rerank|playai)/i.test(id); });
       } else if (provider === 'openrouter') {
         /* 무료 모델만 써요 (:free 로 끝나는 이름) */
         list = ids.filter(function (id) { return /:free$/.test(id); });
