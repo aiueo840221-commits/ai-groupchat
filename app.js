@@ -451,6 +451,7 @@
       '<li>같은 AI라도 이름만 다르게 여러 명 넣을 수 있어요. (예: 제미나이1호, 제미나이2호)</li>' +
       '<li>아래에 하고 싶은 말을 쓰고 <b>전송</b>을 누르면 AI들이 차례로 답해요.</li>' +
       '<li><b>🔗</b>를 누르면 이 방의 비밀 링크가 복사돼요. 나만 쓰려면 아무한테도 보내지 않으면 돼요.</li>' +
+      '<li><b>🤖</b>를 누르면 다른 AI 비서에게 보낼 <b>초대 문구</b>가 복사돼요. (공용 공책을 먼저 연결해 주세요)</li>' +
       '</ol>' +
       '<button class="primary-btn sm" type="button" data-open-settings>AI 열쇠 넣으러 가기</button>' +
       '</div>';
@@ -843,9 +844,53 @@
       legacyCopy(url, done);
     }
   }
-  function legacyCopy(url, done) {
+
+  /* ---------- 🤖 비서 초대 문구 (다른 AI 비서에게 붙여넣을 글) ---------- */
+  function aiInviteText() {
+    var base = dbBase();
+    var crumb = dbPath();
+    var lines = [];
+    lines.push('[' + USER_NAME + '님의 비밀 AI 단톡방 초대]');
+    lines.push('- 방 이름: ' + settings.roomName);
+    lines.push('- 내 호칭: (불릴 이름, 예: 피클2호)');
+    lines.push('- 단톡방 주소: ' + inviteUrl());
+    lines.push('- 공용 공책 직접 읽기(GET): ' + base + '/' + crumb);
+    lines.push('- 공용 공책 글쓰기(POST): ' + base + '/' + crumb);
+    lines.push('  형식(JSON): {"id":"임의ID","who":"비서이름","roleTag":"담당역할","text":"메시지","ts":현재ms}');
+    lines.push('이 방에 들어가서 ' + USER_NAME + '님(@멘션 또는 최근 대화)에게 인사하고, 앞으로 이 주소로 대화에 참여해 줘!');
+    return lines.join(String.fromCharCode(10));
+  }
+
+  function copyAiInvite() {
+    /* 공용 공책이 없으면 다른 비서가 이 방을 볼 수 없으니 먼저 설정으로 안내해요 */
+    if (!dbBase()) {
+      openSettings();
+      toast('먼저 ⚙️ 설정에서 ‘공용 공책 주소’를 입력해야 다른 비서들이 이 방을 볼 수 있어요!');
+      var dbField = $('#setDbUrl');
+      if (dbField) {
+        try {
+          if (dbField.scrollIntoView) dbField.scrollIntoView({ block: 'center' });
+          dbField.focus({ preventScroll: true });
+        } catch (e) { }
+      }
+      return;
+    }
+    var text = aiInviteText();
+    function done(ok) {
+      toast(ok
+        ? '비서 초대 문구를 복사했어요! 다른 비서 채팅창에 붙여넣기 하세요'
+        : '복사가 안 됐어요. 다시 한 번 눌러 주세요.');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { legacyCopy(text, done); });
+    } else {
+      legacyCopy(text, done);
+    }
+  }
+
+  function legacyCopy(text, done) {
     var ta = document.createElement('textarea');
-    ta.value = url;
+    ta.value = text;
     ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
     ta.style.top = '-1000px';
@@ -1155,6 +1200,8 @@
     roomInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') roomInput.blur(); });
 
     $('#btnInvite').addEventListener('click', copyInvite);
+    var aiInviteBtn = $('#btnAiInvite');
+    if (aiInviteBtn) aiInviteBtn.addEventListener('click', copyAiInvite);
     $('#btnSettings').addEventListener('click', openSettings);
     badgesEl.addEventListener('click', function (e) {
       if (e.target.closest('.badge')) openSettings();
