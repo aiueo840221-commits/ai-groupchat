@@ -43,11 +43,26 @@
       ]
     }
   };
+  /* 롤 티어 직급 — 낮은 순서부터 높은 순서 (말풍선·배지 색도 여기서 나와요). */
+  var TIERS = [
+    { key: 'iron', name: '아이언', icon: '⚙️', c1: '#929ba6', c2: '#5b6570', ink: '#ffffff' },
+    { key: 'bronze', name: '브론즈', icon: '🥉', c1: '#c08457', c2: '#8a5626', ink: '#ffffff' },
+    { key: 'silver', name: '실버', icon: '🥈', c1: '#b6c3d1', c2: '#7b8a9c', ink: '#2a3542' },
+    { key: 'gold', name: '골드', icon: '🥇', c1: '#f6c445', c2: '#c98b00', ink: '#4a3300' },
+    { key: 'platinum', name: '플래티넘', icon: '💠', c1: '#45cbbc', c2: '#17897f', ink: '#ffffff' },
+    { key: 'emerald', name: '에메랄드', icon: '🍀', c1: '#3cc47c', c2: '#12733f', ink: '#ffffff' },
+    { key: 'diamond', name: '다이아', icon: '💎', c1: '#5aa6fb', c2: '#2a5fc4', ink: '#ffffff' },
+    { key: 'master', name: '마스터', icon: '🔮', c1: '#a97cf7', c2: '#6d28d9', ink: '#ffffff' },
+    { key: 'grandmaster', name: '그랜드마스터', icon: '🔥', c1: '#f4694f', c2: '#b3231c', ink: '#ffffff' },
+    { key: 'challenger', name: '챌린저', icon: '👑', c1: '#ffd95e', c2: '#d99b00', ink: '#4a3300' }
+  ];
+  var TIER_DEFAULT = 'iron'; /* 새 AI·티어 정보가 없을 때 시작 티어 (기본은 모두 아이언) */
+
   /* 처음 쓰는 방에 들어갈 기본 멤버 3명 (예전 버전과 같은 이름·열쇠 자리) */
   var MEMBER_DEFAULTS = [
-    { id: 'gemini', provider: 'gemini', name: '제미나이', on: true, persona: '', role: '블로그 원고 담당' },
-    { id: 'openai', provider: 'openai', name: '지피티', on: false, persona: '', role: '스레드 카피·아이디어 담당' },
-    { id: 'claude', provider: 'claude', name: '클로드', on: false, persona: '', role: '최종 검수·실행 담당' }
+    { id: 'gemini', provider: 'gemini', name: '제미나이', on: true, persona: '', role: '블로그 원고 담당', tier: 'iron' },
+    { id: 'openai', provider: 'openai', name: '지피티', on: false, persona: '', role: '스레드 카피·아이디어 담당', tier: 'iron' },
+    { id: 'claude', provider: 'claude', name: '클로드', on: false, persona: '', role: '최종 검수·실행 담당', tier: 'iron' }
   ];
   var ROLE_PRESETS = [
     '블로그 원고 담당',
@@ -96,6 +111,8 @@
   var toastTimer = null;
   var pullBusy = false;
   var dbState = '';
+  var pendingBattle = {}; /* 승급전 평가로 기다리는 AI (말풍선을 '평가 중'으로) */
+  var rankBusy = false;   /* 승급전 평가가 도는 중인지 */
 
   /* ---------- 작은 도구들 ---------- */
   function esc(s) {
@@ -155,6 +172,38 @@
     return null;
   }
   function providerInfo(p) { return PROVIDER_INFO[p] || PROVIDER_INFO.gemini; }
+
+  /* ---------- 티어(직급) 도구 ---------- */
+  function tierIndex(key) {
+    for (var i = 0; i < TIERS.length; i++) if (TIERS[i].key === key) return i;
+    return -1;
+  }
+  function tierByKey(key) {
+    var i = tierIndex(key);
+    return i > -1 ? TIERS[i] : TIERS[tierIndex(TIER_DEFAULT)];
+  }
+  function tierOf(ai) { return tierByKey(ai && ai.tier); }
+  function tierStyle(t) { return '--t1:' + t.c1 + ';--t2:' + t.c2 + ';--t-ink:' + t.ink; }
+  function tierTag(key, extraClass) {
+    var t = tierByKey(key);
+    return '<span class="tier-tag' + (extraClass ? ' ' + extraClass : '') + '" style="' + tierStyle(t) + '" title="' + esc(t.name + ' 티어') + '">' +
+      '<span class="tier-ico" aria-hidden="true">' + t.icon + '</span>' + esc(t.name) + '</span>';
+  }
+  /* ▲ 승급 / ▼ 강등 버튼 (compact면 글자 없이 화살표만) */
+  function tierStepHTML(id, key, compact) {
+    var i = tierIndex(key);
+    if (i < 0) i = tierIndex(TIER_DEFAULT);
+    var upEnd = i >= TIERS.length - 1;
+    var downEnd = i <= 0;
+    return '<button type="button" class="tier-step up' + (compact ? ' sm' : '') + '" data-tier-up="' + esc(id) + '"' + (upEnd ? ' disabled' : '') +
+      ' title="' + esc(upEnd ? '이미 최고 티어예요' : TIERS[i + 1].name + '으로 승급') + '" aria-label="' + esc('한 단계 승급') + '">' + (compact ? '▲' : '▲ 승급') + '</button>' +
+      '<button type="button" class="tier-step down' + (compact ? ' sm' : '') + '" data-tier-down="' + esc(id) + '"' + (downEnd ? ' disabled' : '') +
+      ' title="' + esc(downEnd ? '이미 최저 티어예요' : TIERS[i - 1].name + '으로 강등') + '" aria-label="' + esc('한 단계 강등') + '">' + (compact ? '▼' : '▼ 강등') + '</button>';
+  }
+  function fmtDateTime(ts) {
+    var d = new Date(ts);
+    return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + fmtTime(ts);
+  }
   function colorsOf(ai) {
     if (!ai) return { c1: '#8a95a1', c2: '#6b7684' };
     var set = providerInfo(ai.provider).colors;
@@ -213,6 +262,7 @@
       provider: a.provider,
       name: a.name,
       role: a.role || '',
+      tier: tierIndex(a.tier) > -1 ? a.tier : TIER_DEFAULT,
       on: !!a.on,
       apiKey: a.apiKey || '',
       persona: a.persona || '',
@@ -305,18 +355,21 @@
   /* 예전 버전(고정 3명) 저장값을 새 목록 형식으로 바꿔요 */
   function migrateAis(raw) {
     var out = [];
-    function push(provider, id, a, fallbackRole, fallbackOn) {
+    function push(provider, id, a, fallbackRole, fallbackOn, fallbackTier) {
       a = (a && typeof a === 'object') ? a : {};
       var p = PROVIDERS.indexOf(provider) > -1 ? provider : 'gemini';
       var safeId = (typeof id === 'string' && ID_RE.test(id)) ? id : newMemberId(p, out);
       if (out.some(function (x) { return x.id === safeId; })) safeId = newMemberId(p, out);
       var nm = String(a.name || '').trim() || defaultNameFor(p);
       var ci = parseInt(a.colorIndex, 10);
+      /* 티어 정보가 없는 예전 방은 모두 아이언에서 시작해요 */
+      var tk = tierIndex(a.tier) > -1 ? a.tier : (fallbackTier || TIER_DEFAULT);
       out.push({
         id: safeId,
         provider: p,
         name: nm.slice(0, NAME_MAX),
         role: typeof a.role === 'string' ? a.role.slice(0, ROLE_MAX) : (fallbackRole || ''),
+        tier: tierIndex(tk) > -1 ? tk : TIER_DEFAULT,
         on: typeof a.on === 'boolean' ? a.on : !!fallbackOn,
         apiKey: String(a.apiKey || a.key || ''),
         persona: String(a.persona || '').slice(0, PERSONA_MAX),
@@ -334,14 +387,14 @@
     } else if (raw && typeof raw === 'object') {
       /* 예전 형식: { gemini:{...}, openai:{...}, claude:{...} } */
       MEMBER_DEFAULTS.forEach(function (d) {
-        push(d.provider, d.id, raw[d.id], d.role, d.on);
+        push(d.provider, d.id, raw[d.id], d.role, d.on, d.tier);
       });
     }
 
     if (!out.length) {
       MEMBER_DEFAULTS.forEach(function (d) {
         out.push({
-          id: d.id, provider: d.provider, name: d.name, role: d.role,
+          id: d.id, provider: d.provider, name: d.name, role: d.role, tier: d.tier,
           on: d.on, apiKey: '', persona: d.persona, colorIndex: nextColorIndex(d.provider, out)
         });
       });
@@ -355,6 +408,7 @@
       roomName: saved.roomName || '우리들 단톡방',
       dbUrl: saved.dbUrl || '',
       clearedAt: saved.clearedAt || 0,
+      lastBattleAt: saved.lastBattleAt || 0,
       ais: migrateAis(saved.ais),
       names: (saved.names && typeof saved.names === 'object') ? saved.names : {}
     };
@@ -425,7 +479,8 @@
       html += on.map(function (a) {
         var col = colorsOf(a);
         var role = String(a.role || '').trim();
-        return '<span class="badge" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '" title="' + esc(a.name + (role ? ' · ' + role : '')) + '"><i></i>' + esc(a.name) +
+        return '<span class="badge" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '" title="' + esc(tierOf(a).name + ' · ' + a.name + (role ? ' · ' + role : '')) + '">' +
+          tierTag(a.tier, 'sm') + '<b class="badge-name">' + esc(a.name) + '</b>' +
           (role ? '<em>· ' + esc(shortRole(role)) + '</em>' : '') + '</span>';
       }).join('');
     }
@@ -452,6 +507,7 @@
       '<li>아래에 하고 싶은 말을 쓰고 <b>전송</b>을 누르면 AI들이 차례로 답해요.</li>' +
       '<li><b>🔗</b>를 누르면 이 방의 비밀 링크가 복사돼요. 나만 쓰려면 아무한테도 보내지 않으면 돼요.</li>' +
       '<li><b>🤖</b>를 누르면 다른 AI 비서에게 보낼 <b>초대 문구</b>가 복사돼요. (공용 공책을 먼저 연결해 주세요)</li>' +
+      '<li>⚙️에서 AI들 티어(아이언~챌린저)를 정해 주고, <b>🏆 승급전 평가</b>를 누르면 AI끼리 서로 실적을 평가해 승급·강등을 추천해요.</li>' +
       '</ol>' +
       '<button class="primary-btn sm" type="button" data-open-settings>AI 열쇠 넣으러 가기</button>' +
       '</div>';
@@ -491,20 +547,21 @@
     return '<div class="msg ai" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
       '<div class="avatar">' + esc(String(name).charAt(0) || 'A') + '</div>' +
       '<div class="msg-body">' +
-      '<div class="who">' + esc(name) + (role ? '<em>· ' + esc(role) + '</em>' : '') + '</div>' +
+      '<div class="who">' + tierTag(ai && ai.tier, 'sm') + '<b>' + esc(name) + '</b>' + (role ? '<em>· ' + esc(role) + '</em>' : '') + '</div>' +
       '<div class="row"><div class="bubble' + (m.err ? ' bubble-err' : '') + '">' + esc(m.text) + '</div>' +
       '<div class="stamp">' + fmtTime(m.ts) + '</div></div>' +
       '</div></div>';
   }
   function typingHTML(id) {
-    var col = colorsOf(aiById(id));
+    var ai = aiById(id);
+    var col = colorsOf(ai);
     var name = nameOf(id);
     var role = roleOf(id);
     return '<div class="msg ai" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
       '<div class="avatar">' + esc(String(name).charAt(0) || 'A') + '</div>' +
       '<div class="msg-body">' +
-      '<div class="who">' + esc(name) + (role ? '<em>· ' + esc(role) + '</em>' : '') + '</div>' +
-      '<div class="row"><div class="bubble typing"><span>생각 중</span><i></i><i></i><i></i></div></div>' +
+      '<div class="who">' + tierTag(ai && ai.tier, 'sm') + '<b>' + esc(name) + '</b>' + (role ? '<em>· ' + esc(role) + '</em>' : '') + '</div>' +
+      '<div class="row"><div class="bubble typing"><span>' + (pendingBattle[id] ? '평가 중' : '생각 중') + '</span><i></i><i></i><i></i></div></div>' +
       '</div></div>';
   }
 
@@ -572,10 +629,11 @@
     return on;
   }
 
-  function respond(id, done) {
+  function respond(id, done, opts) {
     if (pending.indexOf(id) < 0) pending.push(id);
+    if (opts && opts.battle) pendingBattle[id] = true;
     render();
-    askAI(id).then(function (text) {
+    askAI(id, opts).then(function (text) {
       removePending(id);
       pushMessage({ who: id, text: text });
       render();
@@ -591,6 +649,7 @@
   function removePending(id) {
     var i = pending.indexOf(id);
     if (i > -1) pending.splice(i, 1);
+    delete pendingBattle[id];
   }
 
   function friendlyError(id, err) {
@@ -614,22 +673,106 @@
     return name + '가 대답을 못 했어요. 잠시 뒤 다시 해 봐 주세요.';
   }
 
+  /* ---------- 🏆 주간 승급전 (AI 상대평가) ---------- */
+  function battlePromptFor(id) {
+    var me = aiById(id);
+    var others = enabledAis().filter(function (a) { return a.id !== id; });
+    var lines = [];
+    lines.push('🏆 주간 승급전 평가 — 이번 주 실적(조회수·완성도·실수 여부 등)을 바탕으로 서로 솔직하게 상대평가하고, 승급/유지/강등 추천을 한 마디씩 남기세요!');
+    lines.push('나: ' + (me ? me.name : '나') + ' (' + tierOf(me).name + ' 티어, ' + (String((me && me.role) || '').trim() || '역할 없음') + ')');
+    if (others.length) {
+      lines.push('평가 대상: ' + others.map(function (a) {
+        return a.name + '(' + (String(a.role || '').trim() || '역할 없음') + ' · ' + tierOf(a).name + ') ';
+      }).join(', '));
+    } else {
+      lines.push('평가 대상: 동료가 없어요. 지금은 나 자신만 냉정하게 자기평가해 주세요.');
+    }
+    lines.push('형식: 동료 한 명마다 “이름 — 잘한 점 / 아쉬운 점 / 추천: 승급·유지·강등”을 1~2줄로, 마무리에 내 티어 각오 한 줄. 전체 6줄 이내.');
+    return lines.join(String.fromCharCode(10));
+  }
+
+  function battleMetaText() {
+    var on = enabledAis();
+    var names = on.length ? on.map(function (a) { return a.name + '(' + tierOf(a).name + ')'; }).join(' · ') : '없음 (⚙️에서 AI를 켜 주세요)';
+    var when = (settings && settings.lastBattleAt)
+      ? '지난 승급전: ' + fmtDateTime(settings.lastBattleAt)
+      : '아직 승급전을 한 번도 안 했어요.';
+    return '평가 대상: ' + names + ' · ' + when;
+  }
+
+  function setBattleBusy(busy) {
+    rankBusy = busy;
+    var chipBtn = $('#btnBattle');
+    if (chipBtn) {
+      chipBtn.classList.toggle('busy', busy);
+      chipBtn.disabled = busy;
+      chipBtn.textContent = busy ? '⏳ 평가 중…' : '🏆 승급전 평가';
+    }
+    var modalBtn = $('#battleBtnModal');
+    if (modalBtn) {
+      modalBtn.disabled = busy;
+      modalBtn.textContent = busy ? '⏳ AI들이 서로 평가하는 중…' : '🏆 승급전 평가 시작';
+    }
+  }
+
+  /* 승급전: 켜진 AI들을 한 명씩 불러 서로를 상대평가하게 해요 */
+  function startRankBattle() {
+    if (rankBusy) { toast('이미 승급전 평가가 진행 중이에요. 조금만 기다려 주세요!'); return; }
+    var on = enabledAis();
+    if (!modal.hidden) closeSettings();
+    if (!on.length) {
+      pushMessage({ who: 'system', text: '켜진 AI가 없어서 승급전을 열 수 없어요. ⚙️에서 AI를 먼저 켜 주세요!' });
+      render();
+      toast('켜진 AI가 없어요. ⚙️에서 AI를 먼저 켜 주세요!');
+      return;
+    }
+    var lineup = on.map(function (a) { return a.name + '(' + tierOf(a).name + ')'; }).join(' · ');
+    pushMessage({
+      who: 'system',
+      text: '🏆 주간 승급전 평가 시작! ' + lineup + ' — 이번 주 실적을 서로 솔직하게 상대평가합니다. (켜진 AI ' + on.length + '명을 차례로 부릅니다)'
+    });
+    settings.lastBattleAt = Date.now();
+    saveSettings();
+    setBattleBusy(true);
+    render();
+
+    var ids = on.map(function (a) { return a.id; });
+    var i = 0;
+    function next() {
+      if (i >= ids.length) {
+        setBattleBusy(false);
+        pushMessage({ who: 'system', text: '🏆 승급전 평가 끝! 마음에 드는 추천은 ⚙️ 설정에서 → 역할 분담 한눈에 보기 → ▲ 승급 / ▼ 강등으로 바로 반영하면 돼요.' });
+        render();
+        return;
+      }
+      var id = ids[i++];
+      respond(id, function () { setTimeout(next, 240); }, { battle: true });
+    }
+    setTimeout(next, 260);
+  }
+
   /* ---------- AI에게 묻기 ---------- */
-  function systemPrompt(id) {
+  function systemPrompt(id, opts) {
     var me = aiById(id) || { name: 'AI', persona: '', role: '' };
     var mine = String(me.role || '').trim() || '정해진 역할 없이 단톡방 친구처럼 돕기';
     var persona = String(me.persona || '').trim();
+    var myTier = tierOf(me);
     var lines = [];
     lines.push('당신은 ' + me.name + '입니다. 이 단톡방에서 당신의 담당 역할은 [' + mine + ']입니다.');
     if (persona) lines.push('말투와 성격: ' + persona);
     lines.push('');
-    lines.push('이 방의 멤버와 역할:');
-    lines.push('- ' + USER_NAME + ' (지시하는 사람, 사장님)');
-    lines.push('- ' + me.name + ' (당신): ' + mine);
+    lines.push('이 방의 멤버와 역할 (롤 티어 = 이 방의 직급):');
+    lines.push('- ' + USER_NAME + ' (지시하는 사람, 사장님 · 티어 없음)');
+    lines.push('- ' + me.name + ' (당신): ' + mine + ' · ' + myTier.name + ' 티어');
     enabledAis().forEach(function (other) {
       if (other.id === id) return;
-      lines.push('- ' + other.name + ': ' + (String(other.role || '').trim() || '정해진 역할 없음'));
+      lines.push('- ' + other.name + ': ' + (String(other.role || '').trim() || '정해진 역할 없음') + ' · ' + tierOf(other).name + ' 티어');
     });
+    lines.push('');
+    lines.push('티어(직급) 규칙:');
+    lines.push('1. 아이언 < 브론즈 < 실버 < 골드 < 플래티넘 < 에메랄드 < 다이아 < 마스터 < 그랜드마스터 < 챌린저 순서입니다.');
+    lines.push('2. 티어가 높을수록 실력을 인정받습니다. 자기 티어에 대한 자부심과 승급 의지가 말투에 은근히 묻어나게 하세요.');
+    lines.push('3. 티어 자랑으로 대화를 채우지는 말고 맡은 일로 증명하세요. 나보다 낮은 티어 동료도 무시하지 마세요.');
     lines.push('');
     lines.push('지켜야 할 것:');
     lines.push('1. 답할 때는 자기 담당 역할의 일을 실제 결과물로 내놓으세요. (원고면 원고, 검수면 고칠 점과 고친 결과)');
@@ -637,6 +780,13 @@
     lines.push('3. 앞에 다른 AI가 이미 답했다면 그 내용을 이어받아, 겹치는 말은 빼고 내 역할에서 보탤 것만 말하세요.');
     lines.push('4. 카카오톡 단톡방처럼 짧고 편한 반말로, 보통 2~6문장. 길게 설명하지 마세요.');
     lines.push('5. 모르면 모른다고 말하고, 없는 내용을 지어내지 마세요.');
+    if (opts && opts.battle) {
+      lines.push('');
+      lines.push('지금은 주간 승급전 상대평가 시간입니다.');
+      lines.push('- 이 방의 대화 기록에서 드러난 성실도·완성도·실수로 냉정하게 평가하세요. 없는 조회수나 수치를 지어내지 마세요.');
+      lines.push('- 동료마다 잘한 점 · 아쉬운 점 · 추천(승급/유지/강등)을 한 마디씩 남기고, 마지막에 내 티어에 대한 각오를 한 줄 붙이세요.');
+      lines.push('- 재미있지만 서로에게 솔직하게, 짧게 말하세요. 감정 상하게 하는 욕설은 금지입니다.');
+    }
     return lines.join(String.fromCharCode(10));
   }
 
@@ -682,17 +832,19 @@
     }, function () { throw { code: 'NETWORK' }; });
   }
 
-  function askAI(id) {
+  function askAI(id, opts) {
     var ai = aiById(id);
     if (!ai) return Promise.reject({ code: 'GONE' });
     var provider = ai.provider;
     var key = String(ai.apiKey || '').trim();
     if (!key) return Promise.reject({ code: 'NO_KEY' });
+    var sys = systemPrompt(id, opts);
     var hist = buildHistory(id);
+    if (opts && opts.battle) hist.push({ role: 'user', text: battlePromptFor(id) });
 
     if (provider === 'gemini') {
       var gBody = {
-        systemInstruction: { parts: [{ text: systemPrompt(id) }] },
+        systemInstruction: { parts: [{ text: sys }] },
         contents: toGemini(hist),
         generationConfig: { temperature: 0.9, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } }
       };
@@ -712,7 +864,7 @@
     if (provider === 'openai') {
       var oBody = {
         model: 'gpt-4o-mini',
-        messages: [{ role: 'system', content: systemPrompt(id) }].concat(hist.map(function (h) {
+        messages: [{ role: 'system', content: sys }].concat(hist.map(function (h) {
           return { role: h.role, content: h.text };
         })),
         max_tokens: 600,
@@ -733,7 +885,7 @@
     var cBody = {
       model: 'claude-3-5-haiku-latest',
       max_tokens: 600,
-      system: systemPrompt(id),
+      system: sys,
       messages: hist.map(function (h) { return { role: h.role, content: h.text }; })
     };
     return callJson('https://api.anthropic.com/v1/messages', {
@@ -919,6 +1071,9 @@
     renderAiCards();
     renderRoleSummary();
     renderDbStatus();
+    var meta = $('#battleMeta');
+    if (meta) meta.textContent = battleMetaText();
+    setBattleBusy(rankBusy);
     var panel = $('#addAiPanel');
     if (panel) panel.hidden = true;
     modal.hidden = false;
@@ -939,14 +1094,20 @@
         '<div class="ai-card-head">' +
         '<div class="avatar">' + esc(String(a.name).charAt(0) || 'A') + '</div>' +
         '<div class="ai-card-title">' +
-        '<input class="ai-name" data-f="name" value="' + esc(a.name) + '" maxlength="' + NAME_MAX + '" aria-label="AI 이름">' +
-        '<div class="ai-kind">' + esc(info.label) + '</div>' +
+        '<span class="ai-name-label">AI 이름 (@로 부를 이름)</span>' +
+        '<input class="ai-name" data-f="name" value="' + esc(a.name) + '" maxlength="' + NAME_MAX + '" placeholder="예: 야오이" aria-label="AI 이름">' +
+        '<div class="ai-kind">' + esc(info.label) + ' · 이름을 고치면 바로 바뀌어요</div>' +
         '</div>' +
         '<label class="switch" title="켜기 / 끄기">' +
         '<input type="checkbox" data-f="on"' + (a.on ? ' checked' : '') + ' aria-label="' + esc(a.name) + ' 켜기">' +
         '<span class="slider"></span>' +
         '</label>' +
         '<button type="button" class="ai-del" data-del="' + esc(a.id) + '" title="이 AI 지우기" aria-label="' + esc(a.name) + ' 지우기">✕</button>' +
+        '</div>' +
+        '<div class="tier-row">' +
+        '<span class="field-label">티어(직급)</span>' +
+        '<span class="tier-slot">' + tierTag(a.tier, 'card') + '</span>' +
+        '<span class="tier-btns">' + tierStepHTML(a.id, a.tier, false) + '</span>' +
         '</div>' +
         '<label class="field">' +
         '<span class="field-label">담당 역할</span>' +
@@ -992,23 +1153,82 @@
     var rows = ['<div class="role-row me"><span class="dot" style="--c1:#191919;--c2:#191919"></span><b>' + esc(USER_NAME) + '</b><span class="role-text">시키는 사람 (사장님)</span></div>'];
     draftAis.forEach(function (a) {
       var col = colorsOf(a);
-      rows.push('<div class="role-row' + (a.on ? '' : ' off') + '" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
+      rows.push('<div class="role-row' + (a.on ? '' : ' off') + '" data-ai="' + esc(a.id) + '" style="--c1:' + col.c1 + ';--c2:' + col.c2 + '">' +
         '<span class="dot"></span><b>' + esc(a.name) + '</b>' +
+        tierTag(a.tier, 'sm') +
         '<span class="role-text">' + esc(a.role || '역할이 아직 없어요') + '</span>' +
         (a.on ? '' : '<span class="role-off">꺼짐</span>') +
+        '<span class="tier-steps">' + tierStepHTML(a.id, a.tier, true) + '</span>' +
         '</div>');
     });
     var onCount = draftAis.filter(function (a) { return a.on; }).length;
     el.innerHTML = rows.join('') +
       '<p class="role-note">' + (onCount > 1
-        ? '‘전체 (각자 역할대로)’에게 말하면 위에서부터 한 명씩, 앞사람 답변을 보고 자기 역할만 해요.'
-        : 'AI를 두 명 이상 켜면 역할을 나눠서 이어서 일해요.') + '</p>';
+        ? '‘전체 (각자 역할대로)’에게 말하면 위에서부터 한 명씩, 앞사람 답변을 보고 자기 역할만 해요. ▲▼로 티어를 바로 올리고 내릴 수 있어요.'
+        : 'AI를 두 명 이상 켜면 역할을 나눠서 이어서 일해요. ▲▼로 티어를 바로 올리고 내릴 수 있어요.') + '</p>';
   }
 
   /* 설정 창 안에서 값을 고치는 대로 ‘역할 한눈에 보기’도 같이 맞춰요 */
   function syncSummary() {
     readCards();
     renderRoleSummary();
+  }
+
+  /* ▲ 승급 / ▼ 강등 — 누르는 즉시 반영(저장 안 눌러도 유지) */
+  function changeTier(id, delta) {
+    if (!draftAis) return;
+    readCards();
+    var target = null;
+    for (var i = 0; i < draftAis.length; i++) if (draftAis[i].id === id) target = draftAis[i];
+    if (!target) return;
+    var idx = tierIndex(target.tier);
+    if (idx < 0) idx = tierIndex(TIER_DEFAULT);
+    var nx = idx + delta;
+    if (nx < 0 || nx >= TIERS.length) return;
+    target.tier = TIERS[nx].key;
+    var live = aiById(id);
+    if (live) {
+      live.tier = target.tier;
+      saveSettings();
+    }
+    var body = $('.sheet-body');
+    var sc = body ? body.scrollTop : 0;
+    renderAiCards();
+    renderRoleSummary();
+    if (body) body.scrollTop = sc;
+    render();
+    toast(target.name + ' → ' + TIERS[nx].name + (delta > 0 ? ' 승급! 🎉' : ' 강등…'));
+  }
+
+  /* 이름은 고치고 손을 떼는 순간 바로 반영 (배지·칩·말풍선까지) */
+  function applyNameNow(id, raw) {
+    if (!draftAis) return;
+    var nm = String(raw || '').trim().slice(0, NAME_MAX);
+    var draft = null;
+    for (var i = 0; i < draftAis.length; i++) if (draftAis[i].id === id) draft = draftAis[i];
+    if (!draft) return;
+    var live = aiById(id);
+    var before = draft.name;
+    if (!nm) nm = defaultNameFor(draft.provider);
+    nm = uniqueName(nm, draftAis, id);
+    draft.name = nm;
+    var card = aiCardsEl.querySelector('.ai-card[data-ai="' + id + '"]');
+    if (card) {
+      var input = card.querySelector('[data-f="name"]');
+      if (input) input.value = nm;
+      var av = card.querySelector('.avatar');
+      if (av) av.textContent = String(nm).charAt(0) || 'A';
+    }
+    if (live) {
+      live.name = nm;
+      if (!settings.names || typeof settings.names !== 'object') settings.names = {};
+      settings.names[id] = nm;
+      saveSettings();
+    }
+    readCards();
+    renderRoleSummary();
+    render();
+    if (nm !== before) toast('이름을 ‘' + nm + '’로 바꿨어요!');
   }
 
   /* ---------- AI 추가 / 삭제 (설정 창 안에서) ---------- */
@@ -1052,6 +1272,11 @@
       provider: provider,
       name: name.slice(0, NAME_MAX),
       role: role.slice(0, ROLE_MAX),
+      tier: (function () {
+        var sel = $('#newAiTier');
+        var v = sel ? sel.value : TIER_DEFAULT;
+        return tierIndex(v) > -1 ? v : TIER_DEFAULT;
+      })(),
       on: true,
       apiKey: apiKey,
       persona: '',
@@ -1122,6 +1347,7 @@
         provider: PROVIDERS.indexOf(a.provider) > -1 ? a.provider : 'gemini',
         name: out,
         role: String(a.role || '').slice(0, ROLE_MAX),
+        tier: tierIndex(a.tier) > -1 ? a.tier : TIER_DEFAULT,
         on: !!a.on,
         apiKey: String(a.apiKey || ''),
         persona: String(a.persona || '').slice(0, PERSONA_MAX),
@@ -1228,6 +1454,10 @@
 
     /* AI 카드: 열쇠 보기 · 켜기/끄기 · 역할 칩 · 삭제 */
     aiCardsEl.addEventListener('click', function (e) {
+      var tierUp = e.target.closest('[data-tier-up]');
+      if (tierUp) { e.preventDefault(); changeTier(tierUp.getAttribute('data-tier-up'), 1); return; }
+      var tierDown = e.target.closest('[data-tier-down]');
+      if (tierDown) { e.preventDefault(); changeTier(tierDown.getAttribute('data-tier-down'), -1); return; }
       var del = e.target.closest('[data-del]');
       if (del) {
         e.preventDefault();
@@ -1251,10 +1481,23 @@
       syncSummary();
     });
     aiCardsEl.addEventListener('change', function (e) {
-      if (e.target.getAttribute('data-f') === 'on') {
+      var f = e.target.getAttribute('data-f');
+      if (f === 'on') {
         var card = e.target.closest('.ai-card');
         if (card) card.classList.toggle('on', e.target.checked);
         syncSummary();
+        return;
+      }
+      /* 이름은 손을 떼는 순간 바로 반영 */
+      if (f === 'name') {
+        var host = e.target.closest('.ai-card');
+        if (host) applyNameNow(host.getAttribute('data-ai'), e.target.value);
+      }
+    });
+    aiCardsEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.getAttribute('data-f') === 'name') {
+        e.preventDefault();
+        e.target.blur();
       }
     });
     aiCardsEl.addEventListener('input', function (e) {
@@ -1266,6 +1509,23 @@
       }
       if (f === 'role' || f === 'name') syncSummary();
     });
+
+    /* 역할 분담 한눈에 보기에서도 바로 승급/강등 */
+    var summaryEl = $('#roleSummary');
+    if (summaryEl) {
+      summaryEl.addEventListener('click', function (e) {
+        var tierUp = e.target.closest('[data-tier-up]');
+        if (tierUp) { e.preventDefault(); changeTier(tierUp.getAttribute('data-tier-up'), 1); return; }
+        var tierDown = e.target.closest('[data-tier-down]');
+        if (tierDown) { e.preventDefault(); changeTier(tierDown.getAttribute('data-tier-down'), -1); }
+      });
+    }
+
+    /* 🏆 승급전 평가 */
+    var battleChip = $('#btnBattle');
+    if (battleChip) battleChip.addEventListener('click', startRankBattle);
+    var battleModalBtn = $('#battleBtnModal');
+    if (battleModalBtn) battleModalBtn.addEventListener('click', startRankBattle);
 
     /* AI 추가 패널 */
     var addBtn = $('#addAiBtn');
