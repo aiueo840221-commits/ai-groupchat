@@ -636,6 +636,62 @@ a { color: var(--accent); }
 .tier-step.sm { padding: 1px 6px; font-size: 10px; line-height: 1.5; border-radius: 6px; font-weight: 800; }
 .tier-steps { display: flex; gap: 3px; margin-left: auto; flex: 0 0 auto; }
 
+/* 👑 대장(방 주인) 표시 */
+.host-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #5a4600;
+  background: linear-gradient(135deg, #ffe680, #f2c200);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 1px 2px rgba(0, 0, 0, .1);
+}
+
+/* 설정 창 「🏆 멤버 티어」 목록 (나·내 AI·외부 비서 전부) */
+.tier-board {
+  border: 1px solid #eef1f4;
+  border-radius: 14px;
+  background: #fafbfc;
+  padding: 4px 10px;
+  margin-bottom: 4px;
+}
+.tier-board-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 13px;
+  min-width: 0;
+}
+.tier-board-row:last-child { border-bottom: none; }
+.tier-board-row b { flex: 0 0 auto; max-width: 28%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.tier-board-row .tier-tag { flex: 0 0 auto; }
+.tier-board-role { flex: 1 1 auto; min-width: 0; color: #7c8794; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tier-board-row .tier-steps { margin-left: 2px; gap: 2px; }
+.tier-board-row .tier-step.sm { padding: 1px 5px; font-size: 9.5px; }
+.tier-board-row.me b { max-width: none; }
+.tier-board-row.ext b { color: #33404d; }
+
+/* ☰ 방 사람들 줄: 이름 옆 ▲▼ · 이름 아래 티어 배지 + 담당·활동 */
+.roster-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.roster-top .roster-name { flex: 1 1 auto; min-width: 0; }
+.roster-top .tier-steps { margin-left: 0; gap: 2px; }
+.roster-top .tier-step.sm { padding: 0 4px; font-size: 9px; line-height: 1.7; border-radius: 5px; }
+.roster-sub { display: flex; align-items: center; gap: 4px; padding: 2px 4px 0; min-width: 0; }
+.roster-sub .tier-slot, .roster-sub .tier-steps { flex: 0 0 auto; }
+.roster-sub .tier-steps { margin-left: 0; gap: 2px; }
+.roster-sub .tier-tag.sm { font-size: 9.5px; padding: 0 6px 0 4px; }
+.roster-sub .tier-tag.sm .tier-ico { font-size: 9px; }
+.roster-sub .tier-step.sm { padding: 0 4px; font-size: 9px; line-height: 1.7; border-radius: 5px; }
+.roster-sub .roster-meta { padding: 0; flex: 1 1 auto; min-width: 0; }
+.roster-sub .host-tag { font-size: 9px; padding: 0 6px; }
+
 .role-row { flex-wrap: nowrap; }
 .role-row b { max-width: 30%; }
 .role-row .role-text { flex: 1 1 auto; min-width: 0; }
