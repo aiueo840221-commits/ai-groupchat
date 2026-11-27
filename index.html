@@ -35,7 +35,7 @@
     <button id="joinBtn" class="ghost-btn wide" type="button">이 링크로 들어가기</button>
     <div id="lockMsg" class="lock-msg" role="status" aria-live="polite"></div>
 
-    <p class="lock-foot">열쇠가 든 링크를 가진 사람만 이 방을 열 수 있어요.<br>링크를 잃어버리면 이 방의 대화는 다시 못 열어요.</p>
+    <p class="lock-foot">열쇠가 든 링크를 가진 사람만 이 방을 열 수 있어요.<br>링크를 잃어버리면 이 방의 대화는 다시 못 열어요.<br><b>한 번 들어온 방은 이 기기에 기억</b>해 두어서, 다음엔 열쇠 없이 바로 들어와요. (다른 방으로 가려면 방 안 ☰ 맨 아래 <b>방 나가기</b>)</p>
   </div>
 </div>
 
@@ -91,6 +91,10 @@
         <div id="roster" class="roster"></div>
         <p class="hint">이름 칸을 고치고 다른 곳을 누르면 <b>바로</b> 채팅·헤더에 반영돼요. 불빛은 내 AI는 켜짐/꺼짐, 외부 비서는 <b>10분 안에 글을 남겼는지</b>로 판단해요.<br>내 AI 줄 오른쪽 <b>✕</b>를 누르면 설정 창에 들어가지 않고 <b>바로 방에서 빠져요</b>.</p>
 
+        <h3 class="section-title">이 기기 설정 <span class="tag-opt">방 열쇠</span></h3>
+        <p class="hint">이 방 열쇠는 <b>이 기기에만</b> 기억돼서 다음에 열면 바로 들어와요. 다른 방으로 가거나 기억을 지우고 싶을 때만 눌러 주세요. 대화·AI 열쇠는 지우지 않아요.</p>
+        <button id="leaveRoom" class="ghost-btn wide leave-btn" type="button" title="이 기기에 기억해 둔 방 열쇠를 지우고 입장 화면으로 돌아가요">🚪 방 나가기 (키 지우기)</button>
+
       </div>
     </aside>
   </div>
@@ -125,7 +129,8 @@
 
       <div class="help-card">
         🔒 AI 열쇠(API 키)는 <b>이 기기에만</b> 저장돼요. 초대 링크를 받은 사람에게는 절대 보이지 않아요.<br>
-        🔗 초대 링크에는 이 방의 <b>비밀 열쇠</b>가 들어 있어요. 링크를 받은 사람만 들어올 수 있으니 아무 데나 올리지 마세요.
+        🔗 초대 링크에는 이 방의 <b>비밀 열쇠</b>가 들어 있어요. 링크를 받은 사람만 들어올 수 있으니 아무 데나 올리지 마세요.<br>
+        🔑 방 열쇠도 <b>이 기기에만</b> 기억돼서 다음엔 바로 들어와요. 지우려면 아래 <b>방 나가기</b>를 누르세요.
       </div>
 
       <h3 class="section-title">역할 분담 한눈에 보기</h3>
@@ -223,6 +228,7 @@
 
       <div class="sheet-actions">
         <button id="saveBtn" class="primary-btn" type="button">저장</button>
+        <button id="leaveRoomSheet" class="text-btn danger" type="button">🚪 방 나가기 (키 지우기 · 이 기기 기억만)</button>
         <button id="clearChat" class="text-btn danger" type="button">이 기기에서 대화 지우기</button>
       </div>
       <p class="foot-note">초간단 AI 단톡방 · 열쇠 없이도 화면과 초대 링크는 그대로 쓸 수 있어요.</p>

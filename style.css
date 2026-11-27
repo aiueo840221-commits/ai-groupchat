@@ -548,6 +548,9 @@ a { color: var(--accent); }
   cursor: pointer;
   flex: 0 0 auto;
 }
+/* ☰ 맨 아래 ‘방 나가기(키 지우기)’ — 다른 설정과 붙지 않게 살짝 띄우고 차분한 색으로 */
+.leave-btn { margin: 2px 0 14px; color: #7c8794; border-style: dashed; }
+.leave-btn:active { background: #f4f6f9; }
 .ghost-btn.sm { font-size: 12px; padding: 8px 10px; }
 .ghost-btn.wide { width: 100%; }
 .ghost-btn:active { background: #f4f6f9; }

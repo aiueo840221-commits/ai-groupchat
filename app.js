@@ -101,6 +101,8 @@
     '자료 조사 담당'
   ];
   var USER_NAME = '대마왕';
+  /* 이 기기에 마지막으로 들어온 방(열쇠)을 기억해 두는 자리 — 다음에 열 때 키 입력 없이 바로 입장 */
+  var LAST_ROOM_KEY = 'aigc.v1.lastRoom';
   var KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
   var ROOM_RE = /^[A-Za-z0-9_-]{4,48}$/;
   var ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -448,6 +450,24 @@
     var k = (u.searchParams.get('k') || h.get('k') || '').trim();
     var db = (u.searchParams.get('db') || h.get('db') || '').trim();
     return { room: room, k: k, db: db, ok: ROOM_RE.test(room) && KEY_RE.test(k) };
+  }
+
+  /* ---------- 기억해 둔 방 (자동 입장) ---------- */
+  /* 열쇠는 이 기기 브라우저에만 저장돼요. 초대 링크·공용 공책으로는 나가지 않아요. */
+  function saveLastRoom(room, k) {
+    if (!ROOM_RE.test(String(room || '')) || !KEY_RE.test(String(k || ''))) return;
+    store(LAST_ROOM_KEY, { room: room, k: k, at: Date.now() });
+  }
+  function readLastRoom() {
+    var v = read(LAST_ROOM_KEY);
+    if (!v || typeof v !== 'object') return null;
+    var room = String(v.room || '').trim();
+    var k = String(v.k || '').trim();
+    if (!ROOM_RE.test(room) || !KEY_RE.test(k)) return null;
+    return { room: room, k: k, db: '' };
+  }
+  function clearLastRoom() {
+    try { localStorage.removeItem(LAST_ROOM_KEY); } catch (e) { }
   }
 
   function showLock(reason) {
@@ -2323,6 +2343,10 @@
     var aiInviteBtn = $('#btnAiInvite');
     if (aiInviteBtn) aiInviteBtn.addEventListener('click', copyAiInvite);
     $('#btnSettings').addEventListener('click', openSettings);
+    var leaveBtn = $('#leaveRoom');
+    if (leaveBtn) leaveBtn.addEventListener('click', leaveRoom);
+    var leaveBtnSheet = $('#leaveRoomSheet');
+    if (leaveBtnSheet) leaveBtnSheet.addEventListener('click', leaveRoom);
     badgesEl.addEventListener('click', function (e) {
       if (e.target.closest('.badge')) openSettings();
     });
@@ -2514,6 +2538,17 @@
   /* ---------- 시작 ---------- */
   function start() {
     var creds = readCreds();
+    var restored = false;
+
+    /* 주소에 열쇠가 없을 때(홈 화면 아이콘·즐겨찾기로 열었을 때)는 이 기기에 기억해 둔 방으로 바로 들어가요.
+       주소에 방이 있는데 열쇠가 틀린 경우는 그대로 안내해요 (다른 방 링크를 잘못 받은 경우일 수 있으니). */
+    if (!creds.ok && !creds.room) {
+      var last = readLastRoom();
+      if (last) {
+        creds = { room: last.room, k: last.k, db: last.db, ok: true };
+        restored = true;
+      }
+    }
 
     if (!creds.ok) {
       bindLockOnly();
@@ -2547,6 +2582,22 @@
     updateHash();
     if (settings.dbUrl) restartSync();
     registerSW();
+
+    /* 정상 입장했으니 이 방을 이 기기에 기억해 둬요 (공용 공책 주소는 방 설정에 따로 저장돼요) */
+    saveLastRoom(roomId, roomKey);
+    if (restored) toast('기억해 둔 방으로 바로 들어왔어요');
+  }
+
+  /* 방 나가기(키 초기화): 이 기기에 기억해 둔 방 열쇠만 지우고 입장 화면으로 돌아가요.
+     대화·AI 열쇠는 그 기기에 그대로 남아 있어서, 초대 링크로 다시 들어오면 그대로 이어져요. */
+  function leaveRoom() {
+    if (!confirm('이 기기에 기억해 둔 방 열쇠를 지우고 입장 화면으로 돌아갈까요?\n\n대화와 AI 열쇠는 이 기기에 그대로 남아 있어요. 초대 링크로 다시 들어오면 그대로 이어져요.')) return;
+    clearLastRoom();
+    try { if (typeof stopPoll === 'function') stopPoll(); } catch (e) { }
+    var u = new URL(location.href);
+    u.search = '';
+    u.hash = '';
+    location.replace(u.pathname);
   }
 
   function bindLockOnly() {
